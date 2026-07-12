@@ -1,0 +1,10 @@
+belphegor-mobile
+Copyright 2026 labi-le
+
+The Android client for belphegor. It embeds the belphegor core
+(https://github.com/labi-le/belphegor), which is licensed under the Apache
+License 2.0; this project is released under the same license.
+
+This product includes software developed by labi-le
+(https://github.com/labi-le/belphegor). See that project's NOTICE for its
+full attributions.

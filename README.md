@@ -93,5 +93,5 @@ lives in `./glue` and is overlaid onto it at build time by
 
 ## License
 
-belphegor-mobile is distributed under the same license as
-[belphegor](https://github.com/labi-le/belphegor).
+[Apache License 2.0](LICENSE) — the same license as the
+[belphegor](https://github.com/labi-le/belphegor) core it is built on. See also [NOTICE](NOTICE).
