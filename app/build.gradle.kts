@@ -59,10 +59,9 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// Bundle the LSPosed module APK into the app's assets so the app can offer a
-// one-tap install. belphegor-mobile is private, so the module can't be fetched
-// from its GitHub release at runtime; the debug-signed module APK is installable
-// as-is. The app copies it out of assets and fires a package-install intent.
+// Bundle the LSPosed module APK into the app's assets so it can offer a one-tap
+// install without a separate download. The debug-signed module APK is installable
+// as-is; the app copies it out of assets and fires a package-install intent.
 val unlockModuleAssets = layout.buildDirectory.dir("generated/unlockModule")
 val bundleUnlockModule =
     tasks.register<Copy>("bundleUnlockModule") {
@@ -75,7 +74,7 @@ val bundleUnlockModule =
         rename { "background-clipboard.apk" }
     }
 
-android.sourceSets.getByName("main").assets.srcDir(unlockModuleAssets)
-
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
-    .configureEach { dependsOn(bundleUnlockModule) }
+// Passing the task (not just its dir) wires the dependency for every asset
+// consumer -- merge, lint, package -- so release lint does not trip Gradle's
+// implicit-dependency check.
+android.sourceSets.getByName("main").assets.srcDir(bundleUnlockModule)
