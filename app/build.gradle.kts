@@ -54,7 +54,7 @@ dependencies {
     // Generated Java package: belphegor.mobile (classes Mobile/Config/Node/Handler).
     implementation(files("libs/belphegor.aar"))
 
-    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("com.google.android.material:material:1.12.0")
 }
