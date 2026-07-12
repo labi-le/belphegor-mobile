@@ -43,7 +43,7 @@ jobs:
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
 
       - name: Assemble debug APK
         run: ./gradlew --no-daemon :background-clipboard:assembleDebug
@@ -99,7 +99,7 @@ jobs:
       - name: Build belphegor.aar (setup-core overlay + gomobile bind)
         run: bash scripts/build-aar.sh
 
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
 
       - name: Assemble debug APK
         run: ./gradlew --no-daemon :app:assembleDebug
