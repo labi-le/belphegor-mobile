@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Belphegor</string>
-    <string name="app_tagline">clipboard sync</string>
     <string name="channel_name">Clipboard sync</string>
-    <string name="nav_open">Open navigation</string>
-    <string name="nav_close">Close navigation</string>
     <string name="notif_text">Clipboard sync running</string>
 
     <!-- sections -->
@@ -15,14 +12,13 @@
 
     <!-- dashboard / status -->
     <string name="status_stopped">Stopped</string>
+    <string name="status_starting">Starting\u2026</string>
     <string name="status_running">Running</string>
     <string name="status_this_device">this device</string>
-    <string name="status_offline_hint">Tap Start sync to go online</string>
+    <string name="status_offline_hint">Flip the switch to start syncing</string>
     <string name="status_binding">binding\u2026</string>
-    <string name="fab_start">Start sync</string>
-    <string name="fab_stop">Stop sync</string>
-    <string name="connected_nodes">CONNECTED NODES</string>
-    <string name="tap_view_nodes">Tap to view all nodes</string>
+    <string name="sync_switch">Sync</string>
+    <string name="connected_nodes">Connected nodes</string>
     <string name="dash_placeholder">\u2014</string>
     <string name="self_line">%1$s \u00b7 #%2$d</string>
     <string name="meta_line">listen %1$s \u00b7 %2$s</string>
@@ -37,7 +33,7 @@
     <string name="peer_meta">%1$s \u00b7 %2$s \u00b7 #%3$d</string>
     <string name="saved_peers">Saved peers</string>
     <string name="saved_peers_none">No saved peers. Tap + to add one.</string>
-    <string name="action_remove">Remove</string>
+    <string name="peer_remove_desc">Remove %s</string>
     <string name="add_node">Add node</string>
     <string name="add_node_msg">Enter the peer address as ip:port</string>
     <string name="add_node_hint">Address</string>
@@ -46,21 +42,15 @@
     <string name="add_node_discovered">Found on your network</string>
     <string name="action_add">Add</string>
     <string name="action_cancel">Cancel</string>
-
-    <!-- toasts -->
-    <string name="toast_added">added %s</string>
-    <string name="toast_removed">removed %s</string>
-    <string name="toast_starting">starting\u2026</string>
-    <string name="toast_stopped">stopped</string>
-    <string name="toast_saved">saved</string>
-
     <!-- settings -->
     <string name="sec_identity">IDENTITY</string>
     <string name="sec_network">NETWORK</string>
     <string name="sec_behavior">BEHAVIOR</string>
     <string name="set_device_name">Device name</string>
     <string name="set_secret">Shared secret</string>
-    <string name="set_secret_hint">empty = open LAN (anyone can connect); set to match desktop --secret</string>
+    <string name="set_secret_hint">same as desktop --secret</string>
+    <string name="footer_secret">Must match the desktop \u0022--secret\u0022 flag. Leave empty for an open LAN, where anyone on the network can connect.</string>
+    <string name="footer_apply">Changes apply the next time sync starts.</string>
     <string name="set_port">Listen port</string>
     <string name="set_port_ex">0 = random</string>
     <string name="set_max_peers">Max peers</string>
@@ -72,10 +62,9 @@
     <string name="set_autostart">Start automatically</string>
     <string name="set_autostart_sub">On app open and device boot</string>
     <string name="set_verbose">Verbose logs</string>
-    <string name="action_save">Save</string>
+    <string name="logs_empty">No output yet.</string>
 
     <!-- logs -->
-    <string name="node_logs">Node logs</string>
     <string name="action_clear">Clear</string>
 
     <!-- background clipboard module (LSPosed) -->

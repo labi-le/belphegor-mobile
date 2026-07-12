@@ -1,18 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Dark: iOS *base* ramp — AMOLED-black canvas, #1C1C1E cards, #2C2C2E
+     dialogs (DESIGN.md §2). Color resources flip via values-night/colors.xml;
+     only the roles that need different non-resource values live here. -->
 <resources>
-    <!-- AMOLED black variant: pure-black window/surfaces at night, with a
-         near-black ramp so cards/FAB containers stay readable. Accent
-         (primary/FAB) colours are inherited from Material3. -->
     <style name="Theme.Belphegor" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:colorBackground">#FF000000</item>
-        <item name="android:windowBackground">#FF000000</item>
-        <item name="colorSurface">#FF000000</item>
-        <item name="colorSurfaceDim">#FF000000</item>
-        <item name="colorSurfaceBright">#FF242424</item>
-        <item name="colorSurfaceContainerLowest">#FF000000</item>
-        <item name="colorSurfaceContainerLow">#FF141414</item>
-        <item name="colorSurfaceContainer">#FF1A1A1A</item>
-        <item name="colorSurfaceContainerHigh">#FF1F1F1F</item>
-        <item name="colorSurfaceContainerHighest">#FF242424</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorOnPrimary">#FFFFFFFF</item>
+        <item name="colorPrimaryContainer">@color/accent</item>
+        <item name="colorOnPrimaryContainer">#FFFFFFFF</item>
+        <item name="colorSecondaryContainer">#FF0E3A6E</item>
+        <item name="colorOnSecondaryContainer">#FF9CC7FF</item>
+        <item name="colorError">@color/ios_red</item>
+
+        <item name="android:colorBackground">@color/bg_canvas</item>
+        <item name="android:windowBackground">@color/bg_canvas</item>
+        <item name="colorSurface">@color/bg_canvas</item>
+        <item name="colorSurfaceDim">@color/bg_canvas</item>
+        <item name="colorSurfaceBright">@color/bg_field</item>
+        <item name="colorSurfaceContainerLowest">@color/bg_canvas</item>
+        <item name="colorSurfaceContainerLow">@color/bg_card</item>
+        <item name="colorSurfaceContainer">@color/bg_card</item>
+        <item name="colorSurfaceContainerHigh">@color/bg_dialog</item>
+        <item name="colorSurfaceContainerHighest">@color/bg_field</item>
+        <item name="colorSurfaceVariant">@color/bg_field</item>
+        <item name="colorOnSurface">@color/label</item>
+        <item name="colorOnSurfaceVariant">@color/label_secondary</item>
+        <item name="colorOutline">@color/separator</item>
+        <item name="colorOutlineVariant">@color/separator</item>
+
+        <item name="android:statusBarColor">@color/bg_canvas</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/bg_canvas</item>
+        <item name="actionMenuTextColor">@color/accent</item>
+        <item name="actionMenuTextAppearance">@style/TextAppearance.Belphegor.MenuAction</item>
+        <item name="bottomNavigationStyle">@style/Widget.Belphegor.BottomNav</item>
     </style>
 </resources>

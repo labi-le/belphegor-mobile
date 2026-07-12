@@ -116,7 +116,8 @@ class BelphegorService : Service() {
         val notification = NotificationCompat.Builder(this, CHANNEL)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(getString(R.string.notif_text))
-            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setSmallIcon(R.drawable.ic_stat_sync)
+            .setColor(getColor(R.color.accent))
             .setOngoing(true)
             .build()
         val type = when {

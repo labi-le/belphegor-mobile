@@ -10,11 +10,12 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.text.InputType
 import android.util.Log
 import android.view.ContextThemeWrapper
 import android.view.Gravity
-import android.view.MotionEvent
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -25,58 +26,52 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import androidx.activity.OnBackPressedCallback
-import androidx.appcompat.app.ActionBarDrawerToggle
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.drawerlayout.widget.DrawerLayout
+import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-import com.google.android.material.floatingactionbutton.FloatingActionButton
-import com.google.android.material.navigation.NavigationView
-import com.google.android.material.switchmaterial.SwitchMaterial
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import org.json.JSONObject
 
 /**
- * Drawer-based control surface. Four sections: Dashboard (state + Start/Stop),
- * Nodes (connected peers + saved peers, add with the + button), Settings and
- * Logs. Dashboard/Nodes poll [NodeState] so peers update live.
+ * Tab-bar control surface (Apple-HIG styling, DESIGN.md). Four tabs: Dashboard
+ * (status card with the sync switch), Nodes (connected + saved peers, add via
+ * the toolbar +), Settings (grouped forms, applied on change) and Logs.
+ * Dashboard/Nodes poll [NodeState] so peers update live.
  */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var prefs: Prefs
-    private lateinit var drawer: DrawerLayout
     private lateinit var toolbar: MaterialToolbar
     private lateinit var content: FrameLayout
-    private lateinit var nav: NavigationView
-    private lateinit var navHeaderView: View
+    private lateinit var tabs: BottomNavigationView
 
     private lateinit var secret: EditText
     private lateinit var deviceName: EditText
     private lateinit var port: EditText
     private lateinit var maxPeers: EditText
-    private lateinit var useTcp: SwitchMaterial
-    private lateinit var discover: SwitchMaterial
-    private lateinit var verbose: SwitchMaterial
-    private lateinit var autostart: SwitchMaterial
-    private lateinit var checkUpdates: SwitchMaterial
-    private lateinit var unlockBtn: MaterialButton
-    private lateinit var batteryBtn: MaterialButton
+    private lateinit var useTcp: MaterialSwitch
+    private lateinit var discover: MaterialSwitch
+    private lateinit var verbose: MaterialSwitch
+    private lateinit var autostart: MaterialSwitch
+    private lateinit var checkUpdates: MaterialSwitch
+    private lateinit var unlockBtn: TextView
+    private lateinit var batteryBtn: TextView
 
     private lateinit var statusDot: View
     private lateinit var statusText: TextView
+    private lateinit var syncSwitch: MaterialSwitch
     private lateinit var selfText: TextView
     private lateinit var metaText: TextView
     private lateinit var summaryText: TextView
-    private lateinit var fab: ExtendedFloatingActionButton
 
     private lateinit var peersHeader: TextView
     private lateinit var peersBox: LinearLayout
@@ -93,16 +88,19 @@ class MainActivity : AppCompatActivity() {
     private var lastStatusJson: String? = null
     private var statusRendered = false
 
+    // While set (uptime deadline), a null status renders as "Starting…" instead
+    // of flashing back to Stopped between the service launch and the node
+    // coming up. Cleared by an explicit stop.
+    private var startingUntil = 0L
+    private var lastStarting = false
+    private var suppressSwitch = false
+
     private val ui = Handler(Looper.getMainLooper())
     private val poll = object : Runnable {
         override fun run() {
             refreshStatus()
             ui.postDelayed(this, POLL_MS)
         }
-    }
-
-    private val backCallback = object : OnBackPressedCallback(false) {
-        override fun handleOnBackPressed() { drawer.closeDrawer(Gravity.START) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -114,98 +112,51 @@ class MainActivity : AppCompatActivity() {
         sections[ID_SETTINGS] = settingsSection()
         sections[ID_LOGS] = logsSection()
 
-        toolbar = MaterialToolbar(this).apply { title = getString(R.string.sec_dashboard) }
-        content = FrameLayout(this)
-        val main = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(toolbar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-            addView(content, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+        toolbar = MaterialToolbar(this).apply {
+            setTitleTextAppearance(this@MainActivity, R.style.TextAppearance_Belphegor_ToolbarTitle)
+            isTitleCentered = true
+            setOnMenuItemClickListener { onToolbarAction(it) }
         }
-
-        navHeaderView = navHeader()
-        nav = NavigationView(this).apply {
-            setBackgroundColor(resolveColor(com.google.android.material.R.attr.colorSurface))
-            addHeaderView(navHeaderView)
-            menu.add(0, ID_DASH, 0, getString(R.string.sec_dashboard)).isCheckable = true
-            menu.add(0, ID_NODES, 1, getString(R.string.sec_nodes)).isCheckable = true
-            menu.add(0, ID_SETTINGS, 2, getString(R.string.sec_settings)).isCheckable = true
-            menu.add(0, ID_LOGS, 3, getString(R.string.sec_logs)).isCheckable = true
-            setNavigationItemSelectedListener { item ->
+        content = FrameLayout(this)
+        tabs = BottomNavigationView(this).apply {
+            isItemActiveIndicatorEnabled = false
+            labelVisibilityMode = BottomNavigationView.LABEL_VISIBILITY_LABELED
+            // Kill the M3 tonal-elevation overlay so the bar sits on the plain
+            // canvas color with only the hairline above it (iOS tab bar).
+            elevation = 0f
+            setBackgroundColor(color(R.color.bg_canvas))
+            menu.add(0, ID_DASH, 0, getString(R.string.sec_dashboard)).setIcon(R.drawable.ic_nav_dashboard)
+            menu.add(0, ID_NODES, 1, getString(R.string.sec_nodes)).setIcon(R.drawable.ic_nav_nodes)
+            menu.add(0, ID_SETTINGS, 2, getString(R.string.sec_settings)).setIcon(R.drawable.ic_nav_settings)
+            menu.add(0, ID_LOGS, 3, getString(R.string.sec_logs)).setIcon(R.drawable.ic_nav_logs)
+            setOnItemSelectedListener { item ->
                 select(item.itemId)
-                drawer.closeDrawer(Gravity.START)
                 true
             }
         }
-
-        drawer = DrawerLayout(this).apply {
-            addView(main, DrawerLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-            addView(nav, DrawerLayout.LayoutParams(dp(300), MATCH_PARENT).apply { gravity = Gravity.START })
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(toolbar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            addView(content, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+            addView(
+                View(this@MainActivity).apply { setBackgroundColor(color(R.color.separator)) },
+                LinearLayout.LayoutParams(MATCH_PARENT, 1),
+            )
+            addView(tabs, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         }
-        setContentView(drawer)
-        setSupportActionBar(toolbar)
+        setContentView(root)
 
-        ViewCompat.setOnApplyWindowInsetsListener(drawer) { _, insets ->
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             toolbar.setPadding(0, bars.top, 0, 0)
-            content.setPadding(0, 0, 0, bars.bottom)
-            navHeaderView.setPadding(dp(20), bars.top + dp(24), dp(20), dp(20))
             insets
         }
-
-        ActionBarDrawerToggle(this, drawer, toolbar, R.string.nav_open, R.string.nav_close).also {
-            drawer.addDrawerListener(it)
-            it.syncState()
-        }
-
-        // Back closes the drawer when open; otherwise the platform default
-        // (finish) runs. Replaces the deprecated onBackPressed override.
-        onBackPressedDispatcher.addCallback(this, backCallback)
-        drawer.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
-            override fun onDrawerOpened(drawerView: View) { backCallback.isEnabled = true }
-            override fun onDrawerClosed(drawerView: View) { backCallback.isEnabled = false }
-        })
 
         select(ID_DASH)
         refreshStatus()
 
-        if (prefs.autostart && !NodeState.running) startNode(announce = false)
+        if (prefs.autostart && !NodeState.running) startNode()
         if (savedInstanceState == null && prefs.checkUpdates) checkUpdatesInBackground(silent = true)
-    }
-
-    // A rightward horizontal swipe from anywhere opens the drawer (not just the
-    // edge). Tracked in dispatchTouchEvent so it works over scroll views/buttons.
-    private var swipeDownX = 0f
-    private var swipeDownY = 0f
-    private var swipeHandled = false
-
-    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (::drawer.isInitialized) {
-            when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    swipeDownX = ev.x
-                    swipeDownY = ev.y
-                    swipeHandled = false
-                }
-                MotionEvent.ACTION_MOVE ->
-                    if (!swipeHandled && !drawer.isDrawerOpen(Gravity.START)) {
-                        val dx = ev.x - swipeDownX
-                        val dy = ev.y - swipeDownY
-                        if (dx > dp(56) && dx > 2 * kotlin.math.abs(dy)) {
-                            swipeHandled = true
-                            // Cancel whatever child started handling this gesture
-                            // (a button press, text selection) so it does not get
-                            // stuck without ever receiving an ACTION_UP.
-                            val cancel = MotionEvent.obtain(ev)
-                            cancel.action = MotionEvent.ACTION_CANCEL
-                            super.dispatchTouchEvent(cancel)
-                            cancel.recycle()
-                            drawer.openDrawer(Gravity.START)
-                        }
-                    }
-            }
-            if (swipeHandled) return true
-        }
-        return super.dispatchTouchEvent(ev)
     }
 
     private fun select(id: Int) {
@@ -219,21 +170,36 @@ class MainActivity : AppCompatActivity() {
                 ID_NODES -> R.string.sec_nodes
                 ID_SETTINGS -> R.string.sec_settings
                 ID_LOGS -> R.string.sec_logs
-                else -> R.string.sec_dashboard
+                else -> R.string.app_name
             },
         )
-        nav.setCheckedItem(id)
+        toolbar.menu.clear()
+        when (id) {
+            ID_NODES -> toolbar.menu.add(0, MENU_ADD, 0, R.string.add_node).apply {
+                icon = ContextCompat.getDrawable(this@MainActivity, R.drawable.ic_add)?.mutate()
+                    ?.also { it.setTint(color(R.color.accent)) }
+                setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            }
+            ID_LOGS -> toolbar.menu.add(0, MENU_CLEAR, 0, R.string.action_clear)
+                .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+        }
+        tabs.menu.findItem(id)?.isChecked = true
         // Only stream log updates while the Logs panel is on screen.
         LogStore.onChange = if (id == ID_LOGS) ({ renderLogs() }) else null
         if (id == ID_NODES) renderSavedPeers()
         if (id == ID_LOGS) renderLogs()
     }
 
-    private fun navHeader(): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(20), dp(48), dp(20), dp(20))
-        addView(TextView(this@MainActivity).apply { text = getString(R.string.app_name); textSize = 22f; setTypeface(typeface, Typeface.BOLD) })
-        addView(dimText().apply { text = getString(R.string.app_tagline); setPadding(0, dp(2), 0, 0) })
+    private fun onToolbarAction(item: MenuItem): Boolean = when (item.itemId) {
+        MENU_ADD -> {
+            showAddNodeDialog()
+            true
+        }
+        MENU_CLEAR -> {
+            LogStore.clear()
+            true
+        }
+        else -> false
     }
 
     private fun dashboardSection(): View {
@@ -241,111 +207,131 @@ class MainActivity : AppCompatActivity() {
             val title = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(16), dp(10), dp(16), dp(10))
             }
             statusDot = View(this@MainActivity).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(12), dp(12)).apply { rightMargin = dp(10) }
-                background = oval(COLOR_OFF)
+                layoutParams = LinearLayout.LayoutParams(dp(10), dp(10)).apply { rightMargin = dp(10) }
+                background = oval(color(R.color.ios_gray))
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
-            statusText = TextView(this@MainActivity).apply { text = getString(R.string.status_stopped); textSize = 20f; setTypeface(typeface, Typeface.BOLD) }
+            statusText = TextView(this@MainActivity).apply {
+                text = getString(R.string.status_stopped)
+                textSize = 20f
+                setTextColor(color(R.color.label))
+                setTypeface(typeface, Typeface.BOLD)
+            }
+            syncSwitch = iosSwitch().apply {
+                contentDescription = getString(R.string.sync_switch)
+                setOnCheckedChangeListener { _, checked ->
+                    if (suppressSwitch) return@setOnCheckedChangeListener
+                    if (checked) {
+                        if (!NodeState.running) startNode()
+                    } else {
+                        stopNode()
+                    }
+                }
+            }
             title.addView(statusDot)
-            title.addView(statusText)
+            title.addView(statusText, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            title.addView(syncSwitch)
             addView(title)
-            selfText = TextView(this@MainActivity).apply { textSize = 15f; setPadding(0, dp(10), 0, 0) }
+            divider()
+            val details = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(11), dp(16), dp(12))
+            }
+            selfText = TextView(this@MainActivity).apply { textSize = 17f; setTextColor(color(R.color.label)) }
             metaText = dimText().apply { setPadding(0, dp(3), 0, 0) }
-            addView(selfText)
-            addView(metaText)
+            details.addView(selfText)
+            details.addView(metaText)
+            addView(details)
         }
         val summaryCard = card {
-            addView(sectionLabel(getString(R.string.connected_nodes)).apply { setPadding(0, 0, 0, 0) })
-            summaryText = TextView(this@MainActivity).apply { text = getString(R.string.dash_placeholder); textSize = 34f; setTypeface(typeface, Typeface.BOLD); setPadding(0, dp(2), 0, 0) }
-            addView(summaryText)
-            addView(dimText().apply { text = getString(R.string.tap_view_nodes); textSize = 12f; setPadding(0, dp(4), 0, 0) })
+            val row = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(16), dp(12), dp(16), dp(12))
+            }
+            val texts = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(sectionLabel(getString(R.string.connected_nodes)).apply { setPadding(0, 0, 0, 0) })
+                summaryText = TextView(this@MainActivity).apply {
+                    text = getString(R.string.dash_placeholder)
+                    textSize = 28f
+                    setTextColor(color(R.color.label))
+                    setTypeface(typeface, Typeface.BOLD)
+                    setPadding(0, dp(2), 0, 0)
+                }
+                addView(summaryText)
+            }
+            row.addView(texts, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            row.addView(
+                TextView(this@MainActivity).apply {
+                    text = "\u203a"
+                    textSize = 26f
+                    setTextColor(color(R.color.label_tertiary))
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                },
+            )
+            addView(row)
         }
         summaryCard.setOnClickListener { select(ID_NODES) }
-        fab = ExtendedFloatingActionButton(this).apply {
-            text = getString(R.string.fab_start)
-            setTextColor(0xFFFFFFFF.toInt())
-            setOnClickListener { if (NodeState.running) stopNode() else startNode() }
-        }
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(96))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
             addView(statusCard)
             addView(summaryCard)
         }
-        return FrameLayout(this).apply {
-            addView(scroll(body), FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-            addView(fab, fabParams())
-        }
+        return scroll(body)
     }
 
     private fun nodesSection(): View {
-        val connectedCard = card {
-            peersHeader = TextView(this@MainActivity).apply {
-                text = getString(R.string.peers_connected)
-                textSize = 16f
-                setTypeface(typeface, Typeface.BOLD)
-                setPadding(0, 0, 0, dp(6))
-            }
-            addView(peersHeader)
-            peersBox = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
-            addView(peersBox)
-        }
-        val savedCard = card {
-            addView(
-                TextView(this@MainActivity).apply {
-                    text = getString(R.string.saved_peers)
-                    textSize = 16f
-                    setTypeface(typeface, Typeface.BOLD)
-                    setPadding(0, 0, 0, dp(6))
-                },
-            )
-            savedBox = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
-            addView(savedBox)
-        }
-        val addFab = FloatingActionButton(this).apply {
-            setImageResource(android.R.drawable.ic_input_add)
-            contentDescription = getString(R.string.add_node)
-            setOnClickListener { showAddNodeDialog() }
-        }
+        peersHeader = sectionLabel(getString(R.string.peers_connected))
+        peersBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        savedBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(96))
-            addView(connectedCard)
-            addView(savedCard)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            addView(peersHeader)
+            addView(card { addView(peersBox) })
+            addView(sectionLabel(getString(R.string.saved_peers)))
+            addView(card { addView(savedBox) })
         }
-        return FrameLayout(this).apply {
-            addView(scroll(body), FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-            addView(addFab, fabParams())
-        }
+        return scroll(body)
     }
 
     private fun settingsSection(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(16))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
         }
         root.addView(sectionLabel(getString(R.string.sec_identity)))
         root.addView(
             card {
-                deviceName = field(getString(R.string.set_device_name), Build.MODEL ?: "Android", prefs.deviceName)
-                secret = field(getString(R.string.set_secret), getString(R.string.set_secret_hint), prefs.secret)
+                deviceName = fieldRow(getString(R.string.set_device_name), Build.MODEL ?: "Android", prefs.deviceName)
+                divider()
+                secret = fieldRow(getString(R.string.set_secret), getString(R.string.set_secret_hint), prefs.secret)
             },
         )
+        root.addView(footerLabel(getString(R.string.footer_secret)))
         root.addView(sectionLabel(getString(R.string.sec_network)))
         root.addView(
             card {
-                port = field(getString(R.string.set_port), getString(R.string.set_port_ex), prefs.port.takeIf { it > 0 }?.toString() ?: "", numeric = true)
-                maxPeers = field(getString(R.string.set_max_peers), getString(R.string.set_max_peers_ex), prefs.maxPeers.takeIf { it > 0 }?.toString() ?: "", numeric = true)
+                port = fieldRow(getString(R.string.set_port), getString(R.string.set_port_ex), prefs.port.takeIf { it > 0 }?.toString() ?: "", numeric = true)
+                divider()
+                maxPeers = fieldRow(getString(R.string.set_max_peers), getString(R.string.set_max_peers_ex), prefs.maxPeers.takeIf { it > 0 }?.toString() ?: "", numeric = true)
+                divider()
                 useTcp = switchRow(getString(R.string.set_tcp), getString(R.string.set_tcp_sub), prefs.transport == "tcp")
+                divider()
                 discover = switchRow(getString(R.string.set_discover), getString(R.string.set_discover_sub), prefs.discover)
             },
         )
+        root.addView(footerLabel(getString(R.string.footer_apply)))
         root.addView(sectionLabel(getString(R.string.sec_behavior)))
         root.addView(
             card {
                 autostart = switchRow(getString(R.string.set_autostart), getString(R.string.set_autostart_sub), prefs.autostart)
+                divider()
                 verbose = switchRow(getString(R.string.set_verbose), null, prefs.verbose)
             },
         )
@@ -353,44 +339,41 @@ class MainActivity : AppCompatActivity() {
         root.addView(
             card {
                 checkUpdates = switchRow(getString(R.string.set_check_updates), getString(R.string.set_check_updates_sub), prefs.checkUpdates)
-                addView(dimText().apply { text = getString(R.string.update_current, Updater.currentVersion(this@MainActivity)); textSize = 12f; setPadding(0, dp(12), 0, 0) })
-                addView(outlinedButton(getString(R.string.update_check_now)) { save(); checkUpdatesInBackground(silent = false) }, fullWidth(dp(10)))
+                divider()
+                buttonRow(getString(R.string.update_check_now)) { checkUpdatesInBackground(silent = false) }
             },
         )
+        root.addView(footerLabel(getString(R.string.update_current, Updater.currentVersion(this))))
         root.addView(sectionLabel(getString(R.string.unlock_section)))
         root.addView(
             card {
-                batteryBtn = outlinedButton(getString(R.string.bg_battery)) { requestBatteryExemption() }
-                addView(batteryBtn, fullWidth(dp(10)))
-                unlockBtn = outlinedButton(getString(R.string.unlock_install)) { toggleUnlockModule() }
-                addView(unlockBtn, fullWidth(dp(10)))
+                batteryBtn = buttonRow(getString(R.string.bg_battery)) { requestBatteryExemption() }
+                divider()
+                unlockBtn = buttonRow(getString(R.string.unlock_install)) { toggleUnlockModule() }
             },
         )
-        root.addView(filledButton(getString(R.string.action_save)) { save(); toast(getString(R.string.toast_saved)) }, fullWidth(dp(4)))
+
+        // iOS-style settings: no Save button, changes persist as they are made
+        // (the running node picks them up on its next start).
+        for (field in arrayOf(deviceName, secret, port, maxPeers)) {
+            field.doAfterTextChanged { save() }
+        }
+        for (sw in arrayOf(useTcp, discover, autostart, verbose, checkUpdates)) {
+            sw.setOnCheckedChangeListener { _, _ -> save() }
+        }
         return scroll(root)
     }
 
     private fun logsSection(): View {
-        val head = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(4))
-            addView(
-                TextView(this@MainActivity).apply { text = getString(R.string.node_logs); textSize = 16f; setTypeface(typeface, Typeface.BOLD) },
-                LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f),
-            )
-            addView(outlinedButton(getString(R.string.action_clear)) { LogStore.clear() })
-        }
         logView = TextView(this).apply {
             typeface = Typeface.MONOSPACE
             textSize = 12f
             setTextIsSelectable(true)
-            setPadding(dp(16), 0, dp(16), dp(16))
+            setPadding(dp(16), dp(12), dp(16), dp(16))
         }
         logScroll = ScrollView(this).apply { addView(logView) }
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(head)
             addView(logScroll, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
         }
     }
@@ -407,7 +390,7 @@ class MainActivity : AppCompatActivity() {
         til.addView(input)
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            val p = dp(20); setPadding(p, dp(8), p, 0)
+            val p = dp(24); setPadding(p, dp(8), p, 0)
             addView(til)
         }
         // Build without an auto-dismissing positive button so an invalid address
@@ -424,12 +407,9 @@ class MainActivity : AppCompatActivity() {
         for ((name, addr) in discoveredPeers()) {
             if (addr in saved) continue
             if (content.childCount == 1) {
-                content.addView(sectionLabel(getString(R.string.add_node_discovered)).apply { setPadding(0, dp(14), 0, 0) })
+                content.addView(sectionLabel(getString(R.string.add_node_discovered)).apply { setPadding(0, dp(16), 0, dp(7)) })
             }
-            content.addView(
-                outlinedButton(peerLabel(name, addr)) { addPeer(addr); dialog.dismiss() },
-                fullWidth(dp(6)),
-            )
+            content.addView(tintedButton(peerLabel(name, addr)) { addPeer(addr); dialog.dismiss() }, fullWidth(dp(6)))
         }
         dialog.setOnShowListener {
             dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
@@ -482,14 +462,17 @@ class MainActivity : AppCompatActivity() {
                     .putExtra(BelphegorService.EXTRA_ADDR, addr),
             )
         }
-        toast(getString(R.string.toast_added, addr))
         renderSavedPeers()
     }
 
     private fun removePeer(addr: String) {
         prefs.peers = prefs.peerList().filter { it != addr }.joinToString("\n")
-        toast(getString(R.string.toast_removed, addr))
         renderSavedPeers()
+    }
+
+    private fun emptyRow(text: String): TextView = dimText().apply {
+        this.text = text
+        setPadding(dp(16), dp(12), dp(16), dp(12))
     }
 
     private fun renderSavedPeers() {
@@ -497,17 +480,32 @@ class MainActivity : AppCompatActivity() {
         savedBox.removeAllViews()
         val list = prefs.peerList()
         if (list.isEmpty()) {
-            savedBox.addView(dimText().apply { text = getString(R.string.saved_peers_none) })
+            savedBox.addView(emptyRow(getString(R.string.saved_peers_none)))
             return
         }
-        for (addr in list) {
+        for ((i, addr) in list.withIndex()) {
+            if (i > 0) savedBox.divider()
             savedBox.addView(
                 LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(0, dp(6), 0, dp(6))
-                    addView(TextView(this@MainActivity).apply { text = addr; textSize = 15f }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                    addView(outlinedButton(getString(R.string.action_remove)) { removePeer(addr) })
+                    setPadding(dp(16), dp(2), dp(8), dp(2))
+                    addView(
+                        TextView(this@MainActivity).apply {
+                            text = addr
+                            textSize = 17f
+                            setTextColor(color(R.color.label))
+                        },
+                        LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f),
+                    )
+                    addView(
+                        MaterialButton(this@MainActivity, null, com.google.android.material.R.attr.materialIconButtonStyle).apply {
+                            setIconResource(R.drawable.ic_remove_circle)
+                            iconTint = ColorStateList.valueOf(color(R.color.ios_red))
+                            contentDescription = getString(R.string.peer_remove_desc, addr)
+                            setOnClickListener { removePeer(addr) }
+                        },
+                    )
                 },
             )
         }
@@ -515,23 +513,26 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshStatus() {
         val json = NodeState.statusJson()
+        val starting = json == null && SystemClock.uptimeMillis() < startingUntil
         // Skip identical ticks: an idle node re-emits the same snapshot, so there
         // is no need to re-marshal, re-parse, or rebuild any views.
-        if (statusRendered && json == lastStatusJson) return
+        if (statusRendered && json == lastStatusJson && starting == lastStarting) return
         statusRendered = true
         lastStatusJson = json
+        lastStarting = starting
 
         if (json == null) {
-            statusDot.background = oval(COLOR_OFF)
-            statusText.text = getString(R.string.status_stopped)
+            statusDot.background = oval(color(if (starting) R.color.ios_orange else R.color.ios_gray))
+            statusText.text = getString(if (starting) R.string.status_starting else R.string.status_stopped)
+            setSwitch(starting)
             selfText.text = prefs.deviceName.ifBlank { Build.MODEL ?: "Android" }
             metaText.text = getString(R.string.status_offline_hint)
             summaryText.text = getString(R.string.dash_placeholder)
-            fab.text = getString(R.string.fab_start)
-            fab.backgroundTintList = ColorStateList.valueOf(COLOR_FAB_GO)
             peersHeader.text = getString(R.string.peers_connected)
             peersBox.removeAllViews()
-            peersBox.addView(dimText().apply { text = getString(R.string.peers_service_off) })
+            peersBox.addView(
+                emptyRow(getString(if (starting) R.string.status_starting else R.string.peers_service_off)),
+            )
             return
         }
         val o = runCatching { JSONObject(json) }.getOrNull() ?: return
@@ -544,8 +545,9 @@ class MainActivity : AppCompatActivity() {
         val arr = o.optJSONArray("peers")
         val n = arr?.length() ?: 0
 
-        statusDot.background = oval(COLOR_ON)
+        statusDot.background = oval(color(R.color.ios_green))
         statusText.text = getString(R.string.status_running)
+        setSwitch(true)
         selfText.text = getString(R.string.self_line, name, id)
         metaText.text = buildString {
             append(getString(R.string.meta_line, listen, transport))
@@ -555,30 +557,36 @@ class MainActivity : AppCompatActivity() {
             }
         }
         summaryText.text = "$n"
-        fab.text = getString(R.string.fab_stop)
-        fab.backgroundTintList = ColorStateList.valueOf(COLOR_STOP)
 
         peersHeader.text = getString(R.string.peers_connected_n, n)
         peersBox.removeAllViews()
         if (n == 0) {
-            peersBox.addView(dimText().apply { text = getString(R.string.peers_none) })
+            peersBox.addView(emptyRow(getString(R.string.peers_none)))
         } else {
             for (i in 0 until n) {
                 val p = arr!!.getJSONObject(i)
+                if (i > 0) peersBox.divider()
                 peersBox.addView(peerRow(p.optString("name"), p.optString("arch"), p.optString("addr"), p.optLong("id")))
             }
         }
+    }
+
+    private fun setSwitch(checked: Boolean) {
+        if (!::syncSwitch.isInitialized || syncSwitch.isChecked == checked) return
+        suppressSwitch = true
+        syncSwitch.isChecked = checked
+        suppressSwitch = false
     }
 
     private fun peerRow(name: String, arch: String, addr: String, id: Long): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(9), 0, dp(9))
+            setPadding(dp(16), dp(11), dp(16), dp(11))
             addView(
                 View(this@MainActivity).apply {
                     layoutParams = LinearLayout.LayoutParams(dp(9), dp(9)).apply { rightMargin = dp(12) }
-                    background = oval(COLOR_ON)
+                    background = oval(color(R.color.ios_green))
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 },
             )
@@ -588,26 +596,28 @@ class MainActivity : AppCompatActivity() {
                     addView(
                         TextView(this@MainActivity).apply {
                             text = name.ifEmpty { getString(R.string.peer_unknown) }
-                            textSize = 16f
+                            textSize = 17f
+                            setTextColor(color(R.color.label))
                             setTypeface(typeface, Typeface.BOLD)
                         },
                     )
-                    addView(dimText().apply { text = getString(R.string.peer_meta, addr, arch, id); textSize = 12f })
+                    addView(dimText().apply { text = getString(R.string.peer_meta, addr, arch, id); setPadding(0, dp(1), 0, 0) })
                 },
             )
         }
 
-    private fun startNode(announce: Boolean = true) {
+    private fun startNode() {
         save()
         launchService(Intent(this, BelphegorService::class.java))
         ensureNotificationPermission()
-        if (announce) toast(getString(R.string.toast_starting))
+        startingUntil = SystemClock.uptimeMillis() + STARTING_GRACE_MS
+        refreshStatus()
     }
 
     private fun stopNode() {
         stopService(Intent(this, BelphegorService::class.java))
         NodeState.node = null
-        toast(getString(R.string.toast_stopped))
+        startingUntil = 0L
         refreshStatus()
     }
 
@@ -647,7 +657,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderLogs() {
         if (!::logView.isInitialized) return
-        logView.text = LogStore.snapshot()
+        val text = LogStore.snapshot()
+        if (text.isEmpty()) {
+            logView.text = getString(R.string.logs_empty)
+            logView.setTextColor(color(R.color.label_secondary))
+            return
+        }
+        logView.setTextColor(color(R.color.label))
+        logView.text = text
         logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
     }
 
@@ -708,10 +725,9 @@ class MainActivity : AppCompatActivity() {
         const val ID_NODES = 2
         const val ID_SETTINGS = 3
         const val ID_LOGS = 4
+        const val MENU_ADD = 100
+        const val MENU_CLEAR = 101
         const val POLL_MS = 1500L
-        const val COLOR_ON = 0xFF4CAF50.toInt()
-        const val COLOR_OFF = 0xFF9E9E9E.toInt()
-        const val COLOR_FAB_GO = 0xFF2E7D32.toInt()
-        const val COLOR_STOP = 0xFFC62828.toInt()
+        const val STARTING_GRACE_MS = 6000L
     }
 }

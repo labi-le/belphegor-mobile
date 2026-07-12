@@ -40,13 +40,13 @@ Enable *install unknown apps* for your browser or file manager, then open the AP
 
 ## Setup
 
-1. Open the app and go to **Settings**.
-2. Set a **Shared secret** matching your desktop `belphegor --secret`. Leave it empty for an open LAN, where anyone on the network can connect.
+1. Open the app and go to the **Settings** tab.
+2. Set a **Shared secret** matching your desktop `belphegor --secret`. Leave it empty for an open LAN, where anyone on the network can connect. Changes are saved as you type and apply the next time sync starts.
 3. Optionally set a **Device name**, listen port, transport (QUIC by default, or TCP), and turn on **LAN auto-discovery**.
-4. Go back and tap **Start sync**.
+4. Back on the **Dashboard** tab, flip the **sync switch** on.
 
 On the same network the app discovers your desktop peers automatically; you can
-also add one manually as `ip:port` from the **Nodes** screen. Copy something on
+also add one manually as `ip:port` with the **+** button on the **Nodes** tab. Copy something on
 any device and it shows up on the others.
 
 ## Background sync (LSPosed)

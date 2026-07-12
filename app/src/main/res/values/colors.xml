@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Apple-HIG palette (light). Dark variants in values-night/colors.xml.
+     Tokens documented in DESIGN.md §2 — do not add colors outside it. -->
+<resources>
+    <color name="accent">#FF007AFF</color>                <!-- systemBlue -->
+    <color name="accent_tint">#26007AFF</color>           <!-- tinted-button fill, 15% -->
+    <color name="ios_green">#FF34C759</color>             <!-- systemGreen -->
+    <color name="ios_orange">#FFFF9500</color>            <!-- systemOrange (starting) -->
+    <color name="ios_red">#FFFF3B30</color>               <!-- systemRed -->
+    <color name="ios_gray">#FF8E8E93</color>              <!-- systemGray -->
+    <color name="switch_track_off">#29787880</color>      <!-- systemFill 16% -->
+    <color name="label_secondary">#993C3C43</color>       <!-- secondaryLabel 60% -->
+    <color name="label_tertiary">#4D3C3C43</color>        <!-- tertiaryLabel 30% -->
+    <color name="separator">#4A3C3C43</color>             <!-- separator 29% -->
+
+    <color name="bg_canvas">#FFF2F2F7</color>             <!-- systemGroupedBackground -->
+    <color name="bg_card">#FFFFFFFF</color>               <!-- secondarySystemGroupedBackground -->
+    <color name="bg_dialog">#FFFFFFFF</color>
+    <color name="bg_field">#FFE5E5EA</color>              <!-- tertiary fills / gray5 -->
+    <color name="label">#FF000000</color>
+</resources>

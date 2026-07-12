@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Apple-HIG palette (dark, iOS *base* ramp: AMOLED black canvas). DESIGN.md §2. -->
+<resources>
+    <color name="accent">#FF0A84FF</color>
+    <color name="accent_tint">#330A84FF</color>
+    <color name="ios_green">#FF30D158</color>
+    <color name="ios_orange">#FFFF9F0A</color>
+    <color name="ios_red">#FFFF453A</color>
+    <color name="ios_gray">#FF8E8E93</color>
+    <color name="switch_track_off">#52787880</color>
+    <color name="label_secondary">#99EBEBF5</color>
+    <color name="label_tertiary">#4DEBEBF5</color>
+    <color name="separator">#99545458</color>
+
+    <color name="bg_canvas">#FF000000</color>
+    <color name="bg_card">#FF1C1C1E</color>
+    <color name="bg_dialog">#FF2C2C2E</color>
+    <color name="bg_field">#FF3A3A3C</color>
+    <color name="label">#FFFFFFFF</color>
+</resources>
