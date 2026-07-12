@@ -1,0 +1,4 @@
+[submodule "belphegor"]
+	path = belphegor
+	url = https://github.com/labi-le/belphegor
+	ignore = dirty

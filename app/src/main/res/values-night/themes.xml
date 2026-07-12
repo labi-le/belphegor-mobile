@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- AMOLED black variant: pure-black window/surfaces at night, with a
+         near-black ramp so cards/FAB containers stay readable. Accent
+         (primary/FAB) colours are inherited from Material3. -->
+    <style name="Theme.Belphegor" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:colorBackground">#FF000000</item>
+        <item name="android:windowBackground">#FF000000</item>
+        <item name="colorSurface">#FF000000</item>
+        <item name="colorSurfaceDim">#FF000000</item>
+        <item name="colorSurfaceBright">#FF242424</item>
+        <item name="colorSurfaceContainerLowest">#FF000000</item>
+        <item name="colorSurfaceContainerLow">#FF141414</item>
+        <item name="colorSurfaceContainer">#FF1A1A1A</item>
+        <item name="colorSurfaceContainerHigh">#FF1F1F1F</item>
+        <item name="colorSurfaceContainerHighest">#FF242424</item>
+    </style>
+</resources>
