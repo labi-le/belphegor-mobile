@@ -28,3 +28,5 @@ background-clipboard/libs/*.aar
 *.jks
 *.keystore
 keystore.properties
+
+# throwaway: auto-merge capability check
