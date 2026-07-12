@@ -1,13 +1,13 @@
 name: build
 
-# Builds both shippable APKs on every push/PR:
+# Builds both APKs on a v* tag push and on pull requests:
 #   * :background-clipboard  -> the LSPosed/Xposed module (pure Kotlin, no Go)
 #   * :app               -> the client app (gomobile AAR from the Go core + gradle)
 # Debug variants are debug-signed, so the uploaded artifacts install directly.
 
 on:
   push:
-    branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
