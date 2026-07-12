@@ -1,0 +1,113 @@
+name: track-core-release
+
+# Watch the belphegor core (labi-le/belphegor) for a new GitHub release and,
+# when one lands that is *ahead* of the pinned ./belphegor submodule, cut a
+# matching belphegor-mobile release automatically:
+#   1. move the submodule to the core release commit,
+#   2. patch-bump the app version (versionName + versionCode),
+#   3. commit to main and push a v* tag.
+# The tag push triggers release.yml, which builds and publishes the APKs.
+#
+# The "ahead" check uses commit ancestry, so the submodule is only ever moved
+# FORWARD -- a core release older than the current pin is ignored (never a
+# downgrade).
+#
+# REQUIRES a repo secret RELEASE_PAT: a token with Contents: read/write on this
+# repo. The default GITHUB_TOKEN cannot be used here, because a tag pushed with
+# it does NOT trigger another workflow (release.yml) -- GitHub's recursion
+# guard. Create a fine-grained PAT scoped to labi-le/belphegor-mobile
+# (Contents: Read and write) and add it as the RELEASE_PAT secret.
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # daily 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: track-core-release
+  cancel-in-progress: false
+
+jobs:
+  track:
+    if: github.repository == 'labi-le/belphegor-mobile'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+      CORE: labi-le/belphegor
+    steps:
+      - name: Require RELEASE_PAT
+        run: |
+          if [ -z "${RELEASE_PAT}" ]; then
+            echo "::error::RELEASE_PAT secret is not set (see this workflow's header)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Detect a core release ahead of the submodule
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          core_tag=$(gh api "repos/${CORE}/releases/latest" --jq .tag_name)
+          echo "core latest release: ${core_tag}"
+          git -C belphegor fetch --tags --force origin >/dev/null 2>&1 || true
+          git -C belphegor fetch --unshallow origin >/dev/null 2>&1 || true
+          core_commit=$(git -C belphegor rev-list -n1 "${core_tag}")
+          sub_commit=$(git -C belphegor rev-parse HEAD)
+          echo "core release commit: ${core_commit}"
+          echo "submodule commit:    ${sub_commit}"
+          if [ "${core_commit}" = "${sub_commit}" ]; then
+            echo "already at the latest core release; nothing to do"
+            exit 0
+          fi
+          # Only move forward: act iff the pinned commit is an ancestor of the release.
+          if git -C belphegor merge-base --is-ancestor "${sub_commit}" "${core_commit}"; then
+            {
+              echo "act=true"
+              echo "core_tag=${core_tag}"
+              echo "core_commit=${core_commit}"
+            } >> "$GITHUB_OUTPUT"
+            echo "core release ${core_tag} is ahead -> will release"
+          else
+            echo "submodule is not behind ${core_tag}; nothing to do"
+          fi
+
+      - name: Bump submodule + app version and tag a release
+        if: steps.detect.outputs.act == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # 1) move the submodule to the core release commit
+          git -C belphegor checkout --quiet "${{ steps.detect.outputs.core_commit }}"
+          git add belphegor
+
+          # 2) patch-bump the app version
+          gradle=app/build.gradle.kts
+          old_vc=$(sed -nE 's/.*versionCode = ([0-9]+).*/\1/p' "$gradle")
+          old_vn=$(sed -nE 's/.*versionName = "([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' "$gradle")
+          IFS=. read -r MA MI PA <<< "${old_vn}"
+          new_vc=$((old_vc + 1))
+          new_vn="${MA}.${MI}.$((PA + 1))"
+          sed -i -E "s/(versionCode = )[0-9]+/\1${new_vc}/" "$gradle"
+          sed -i -E "s/(versionName = \")[0-9]+\.[0-9]+\.[0-9]+/\1${new_vn}/" "$gradle"
+          git add "$gradle"
+          echo "version ${old_vn} (code ${old_vc}) -> ${new_vn} (code ${new_vc})"
+
+          # 3) commit to main + push a v* tag (the tag triggers release.yml)
+          git commit -m "release: v${new_vn} — track core ${{ steps.detect.outputs.core_tag }}"
+          git tag -a "v${new_vn}" -m "belphegor-mobile v${new_vn} (core ${{ steps.detect.outputs.core_tag }})"
+          git push origin HEAD:main
+          git push origin "v${new_vn}"
+          echo "::notice::published v${new_vn} tracking core ${{ steps.detect.outputs.core_tag }}"

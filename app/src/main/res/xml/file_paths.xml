@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Received images are staged here before being placed on the clipboard. -->
+    <cache-path name="clip-images" path="clip-images/" />
+    <!-- The bundled LSPosed module APK, staged before the install intent. -->
+    <cache-path name="apks" path="apks/" />
+</paths>

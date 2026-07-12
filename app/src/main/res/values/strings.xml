@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Belphegor</string>
+    <string name="app_tagline">clipboard sync</string>
+    <string name="channel_name">Clipboard sync</string>
+    <string name="nav_open">Open navigation</string>
+    <string name="nav_close">Close navigation</string>
+    <string name="notif_text">Clipboard sync running</string>
+
+    <!-- sections -->
+    <string name="sec_dashboard">Dashboard</string>
+    <string name="sec_nodes">Nodes</string>
+    <string name="sec_settings">Settings</string>
+    <string name="sec_logs">Logs</string>
+
+    <!-- dashboard / status -->
+    <string name="status_stopped">Stopped</string>
+    <string name="status_running">Running</string>
+    <string name="status_this_device">this device</string>
+    <string name="status_offline_hint">Tap Start sync to go online</string>
+    <string name="status_binding">binding\u2026</string>
+    <string name="fab_start">Start sync</string>
+    <string name="fab_stop">Stop sync</string>
+    <string name="connected_nodes">CONNECTED NODES</string>
+    <string name="tap_view_nodes">Tap to view all nodes</string>
+    <string name="dash_placeholder">\u2014</string>
+    <string name="self_line">%1$s \u00b7 #%2$d</string>
+    <string name="meta_line">listen %1$s \u00b7 %2$s</string>
+    <string name="meta_discovery">\u00b7 discovery on</string>
+
+    <!-- nodes -->
+    <string name="peers_connected">Connected</string>
+    <string name="peers_connected_n">Connected (%d)</string>
+    <string name="peers_none">No peers connected yet.</string>
+    <string name="peers_service_off">Service not running.</string>
+    <string name="peer_unknown">unknown</string>
+    <string name="peer_meta">%1$s \u00b7 %2$s \u00b7 #%3$d</string>
+    <string name="saved_peers">Saved peers</string>
+    <string name="saved_peers_none">No saved peers. Tap + to add one.</string>
+    <string name="action_remove">Remove</string>
+    <string name="add_node">Add node</string>
+    <string name="add_node_msg">Enter the peer address as ip:port</string>
+    <string name="add_node_hint">Address</string>
+    <string name="add_node_placeholder">192.168.1.10:7777</string>
+    <string name="add_node_invalid">Enter a valid ip:port (e.g. 192.168.1.10:7777)</string>
+    <string name="add_node_discovered">Found on your network</string>
+    <string name="action_add">Add</string>
+    <string name="action_cancel">Cancel</string>
+
+    <!-- toasts -->
+    <string name="toast_added">added %s</string>
+    <string name="toast_removed">removed %s</string>
+    <string name="toast_starting">starting\u2026</string>
+    <string name="toast_stopped">stopped</string>
+    <string name="toast_saved">saved</string>
+
+    <!-- settings -->
+    <string name="sec_identity">IDENTITY</string>
+    <string name="sec_network">NETWORK</string>
+    <string name="sec_behavior">BEHAVIOR</string>
+    <string name="set_device_name">Device name</string>
+    <string name="set_secret">Shared secret</string>
+    <string name="set_secret_hint">empty = open LAN (anyone can connect); set to match desktop --secret</string>
+    <string name="set_port">Listen port</string>
+    <string name="set_port_ex">0 = random</string>
+    <string name="set_max_peers">Max peers</string>
+    <string name="set_max_peers_ex">0 = default</string>
+    <string name="set_tcp">Use TCP transport</string>
+    <string name="set_tcp_sub">Default transport is QUIC</string>
+    <string name="set_discover">LAN auto-discovery</string>
+    <string name="set_discover_sub">Find peers on the same Wi-Fi (multicast)</string>
+    <string name="set_autostart">Start automatically</string>
+    <string name="set_autostart_sub">On app open and device boot</string>
+    <string name="set_verbose">Verbose logs</string>
+    <string name="action_save">Save</string>
+
+    <!-- logs -->
+    <string name="node_logs">Node logs</string>
+    <string name="action_clear">Clear</string>
+
+    <!-- background clipboard module (LSPosed) -->
+    <string name="unlock_section">BACKGROUND</string>
+    <string name="unlock_install">Install background module</string>
+    <string name="unlock_uninstall">Uninstall background module</string>
+    <string name="unlock_uninstall_failed">Uninstall failed: %s</string>
+    <string name="unlock_need_permission">Allow installing unknown apps, then tap again.</string>
+    <string name="unlock_install_failed">Install failed: %s</string>
+
+    <!-- keep-alive (battery optimization) -->
+    <string name="bg_battery">Allow background (battery)</string>
+    <string name="bg_battery_ok">Background allowed (battery)</string>
+    <string name="bg_battery_ok_hint">Already exempt from battery optimization.</string>
+
+    <!-- updates (GitHub releases) -->
+    <string name="sec_updates">UPDATES</string>
+    <string name="set_check_updates">Check for updates on launch</string>
+    <string name="set_check_updates_sub">Look at GitHub releases when the app opens</string>
+    <string name="update_check_now">Check now</string>
+    <string name="update_current">Installed version %s</string>
+    <string name="update_checking">Checking for updates\u2026</string>
+    <string name="update_up_to_date">You\u2019re on the latest version</string>
+    <string name="update_failed">Update check failed: %s</string>
+    <string name="update_available_title">Update available \u00b7 %s</string>
+    <string name="update_download">Download &amp; install</string>
+    <string name="update_later">Later</string>
+    <string name="update_downloading">Downloading\u2026 %d%%</string>
+    <string name="update_download_failed">Download failed: %s</string>
+</resources>

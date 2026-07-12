@@ -1,0 +1,111 @@
+name: build
+
+# Builds both shippable APKs on every push/PR:
+#   * :background-clipboard  -> the LSPosed/Xposed module (pure Kotlin, no Go)
+#   * :app               -> the client app (gomobile AAR from the Go core + gradle)
+# Debug variants are debug-signed, so the uploaded artifacts install directly.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # NDK + x/mobile revision pinned to what scripts/setup-core.sh + shell.nix use.
+  NDK_VERSION: "26.1.10909125"
+  XMOBILE: "golang.org/x/mobile/cmd/gomobile@v0.0.0-20241213221354-a87c1cf6cf46"
+
+jobs:
+  xposed:
+    name: Xposed module (background-clipboard)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+      - name: Assemble debug APK
+        run: ./gradlew --no-daemon :background-clipboard:assembleDebug
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: background-clipboard-debug
+          path: background-clipboard/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  app:
+    name: Client app (gomobile AAR + APK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # go.work pins `go 1.26`; keep the toolchain local so Go never silently
+      # downloads a different one.
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive # the belphegor core is a submodule
+
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: |
+            go.work.sum
+            belphegor/go.sum
+
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
+      - name: Install SDK + NDK
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install gomobile (pinned to the vendored x/mobile)
+        run: |
+          go install "${XMOBILE}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: gomobile init
+        run: gomobile init
+
+      - name: Build belphegor.aar (setup-core overlay + gomobile bind)
+        run: bash scripts/build-aar.sh
+
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+      - name: Assemble debug APK
+        run: ./gradlew --no-daemon :app:assembleDebug
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: belphegor-app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

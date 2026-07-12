@@ -1,0 +1,132 @@
+name: release
+
+# On a `v*` tag: build the release variants of both APKs, sign them if a
+# keystore is configured, and attach them to a GitHub Release.
+#
+#   * :app              -> R8-minified, resource-shrunk, ARM-only (~26 MB)
+#   * :background-clipboard -> the LSPosed/Xposed module
+#
+# Signing is optional. Provide these repo secrets to get signed APKs, otherwise
+# the release ships *-unsigned.apk:
+#   KEYSTORE_BASE64    base64 of your release keystore (.jks)
+#   KEYSTORE_PASSWORD  keystore password
+#   KEY_ALIAS          key alias
+#   KEY_PASSWORD       key password
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the release + upload assets
+
+env:
+  NDK_VERSION: "26.1.10909125"
+  XMOBILE: "golang.org/x/mobile/cmd/gomobile@v0.0.0-20241213221354-a87c1cf6cf46"
+  GOTOOLCHAIN: local
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: |
+            go.work.sum
+            belphegor/go.sum
+
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
+      - name: Install SDK + NDK
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install gomobile (pinned to the vendored x/mobile)
+        run: |
+          go install "${XMOBILE}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: gomobile init
+        run: gomobile init
+
+      - name: Build belphegor.aar
+        run: bash scripts/build-aar.sh
+
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+      - name: Assemble release APKs
+        run: |
+          set -euo pipefail
+          mkdir -p staging
+          # slim ARM app (real phones) + the Xposed module
+          ./gradlew --no-daemon :app:assembleRelease :background-clipboard:assembleRelease
+          cp "$(ls app/build/outputs/apk/release/*.apk | head -1)" staging/app-arm.apk
+          cp "$(ls background-clipboard/build/outputs/apk/release/*.apk | head -1)" staging/unlock.apk
+          # x86_64-only app (emulators / Waydroid)
+          ./gradlew --no-daemon :app:assembleRelease -Px86only
+          cp "$(ls app/build/outputs/apk/release/*.apk | head -1)" staging/app-x86_64.apk
+          ls -l staging
+
+      - name: Sign and collect APKs
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          bt="${ANDROID_HOME}/build-tools/35.0.0"
+          mkdir -p dist
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
+            echo "${KEYSTORE_BASE64}" | base64 -d > /tmp/release.jks
+            suffix=""
+          else
+            echo "::warning::no KEYSTORE_BASE64 secret; shipping UNSIGNED APKs"
+            suffix="-unsigned"
+          fi
+
+          emit() { # emit <in-apk> <out-name>
+            local in="$1" out="dist/$2${suffix}.apk"
+            if [ -n "${KEYSTORE_BASE64:-}" ]; then
+              "$bt/zipalign" -p -f 4 "$in" "$out"
+              "$bt/apksigner" sign \
+                --ks /tmp/release.jks --ks-pass "env:KEYSTORE_PASSWORD" \
+                --ks-key-alias "${KEY_ALIAS}" --key-pass "env:KEY_PASSWORD" "$out"
+              "$bt/apksigner" verify "$out"
+            else
+              cp "$in" "$out"
+            fi
+          }
+          emit staging/app-arm.apk    "belphegor"
+          emit staging/unlock.apk     "belphegor-background-clipboard"
+          emit staging/app-x86_64.apk "belphegor-x86_64"
+          ls -l dist
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-apks
+          path: dist/*.apk
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          files: dist/*.apk
+          generate_release_notes: true
+          fail_on_unmatched_files: true

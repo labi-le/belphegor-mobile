@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- LSPosed injects the hook into system_server (package "android"). -->
+    <string-array name="xposed_scope">
+        <item>android</item>
+    </string-array>
+</resources>

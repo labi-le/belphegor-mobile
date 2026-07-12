@@ -1,0 +1,12 @@
+// Workspace wiring the mobile build to the belphegor core.
+//
+// The core is vendored as a git submodule at ./belphegor (pinned commit). The
+// gomobile facade and the android clipboard backend live in ./glue and are
+// overlaid onto the submodule by scripts/setup-core.sh before building: they
+// must sit inside the belphegor module to import its internal/* packages, but
+// they are NOT part of the upstream core repo.
+//
+// After cloning:  git submodule update --init && scripts/setup-core.sh
+go 1.26
+
+use ./belphegor
