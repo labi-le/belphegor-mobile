@@ -3,7 +3,6 @@
      Tokens documented in DESIGN.md §2 — do not add colors outside it. -->
 <resources>
     <color name="accent">#FF007AFF</color>                <!-- systemBlue -->
-    <color name="accent_tint">#26007AFF</color>           <!-- tinted-button fill, 15% -->
     <color name="ios_green">#FF34C759</color>             <!-- systemGreen -->
     <color name="ios_orange">#FFFF9500</color>            <!-- systemOrange (starting) -->
     <color name="ios_red">#FFFF3B30</color>               <!-- systemRed -->

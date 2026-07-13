@@ -22,10 +22,12 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
@@ -60,6 +62,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var verbose: MaterialSwitch
     private lateinit var autostart: MaterialSwitch
     private lateinit var checkUpdates: MaterialSwitch
+    private lateinit var discoverDelay: EditText
+    private lateinit var keepAlive: EditText
+    private lateinit var maxFileSize: EditText
+    private lateinit var maxClipboardFiles: EditText
+    private lateinit var allowFiles: MaterialSwitch
+    private lateinit var sendClip: MaterialSwitch
+    private lateinit var receiveClip: MaterialSwitch
+    private lateinit var wifiOnly: MaterialSwitch
+    private lateinit var bgDiscovery: MaterialSwitch
+    private lateinit var appearanceValue: TextView
     private lateinit var unlockBtn: TextView
     private lateinit var batteryBtn: TextView
 
@@ -72,6 +84,9 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var peersHeader: TextView
     private lateinit var peersBox: LinearLayout
+    private lateinit var discoveredHeader: TextView
+    private lateinit var discoveredBox: LinearLayout
+    private lateinit var discoveredCard: View
     private lateinit var savedBox: LinearLayout
 
     private lateinit var logView: TextView
@@ -90,6 +105,11 @@ class MainActivity : AppCompatActivity() {
     // coming up. Cleared by an explicit stop.
     private var startingUntil = 0L
     private var lastStarting = false
+    private var lastPaused = false
+
+    // Signature of the last rendered LAN-discovered list (Nodes tab): an
+    // unchanged discovery result skips the view rebuild, like the status poll.
+    private var lastDiscoveredSig: String? = null
 
     // Hairline under the toolbar, shown only while the active section is
     // scrolled (the HIG "scroll edge" cue); scrollers registered per section.
@@ -106,6 +126,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        AppCompatDelegate.setDefaultNightMode(themeMode(Prefs(this).theme))
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
 
@@ -127,6 +148,10 @@ class MainActivity : AppCompatActivity() {
             // canvas color with only the hairline above it (iOS tab bar).
             elevation = 0f
             setBackgroundColor(color(R.color.bg_canvas))
+            // No press ripple on tabs — iOS tab bars have no touch animation,
+            // just an instant color change (and M3 draws an unbounded ripple
+            // once the active-indicator is disabled).
+            itemRippleColor = ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
             menu.add(0, ID_DASH, 0, getString(R.string.sec_dashboard)).setIcon(R.drawable.ic_nav_dashboard)
             menu.add(0, ID_NODES, 1, getString(R.string.sec_nodes)).setIcon(R.drawable.ic_nav_nodes)
             menu.add(0, ID_SETTINGS, 2, getString(R.string.sec_settings)).setIcon(R.drawable.ic_nav_settings)
@@ -192,14 +217,13 @@ class MainActivity : AppCompatActivity() {
         toolbar.menu.clear()
         when (id) {
             ID_NODES -> toolbar.menu.add(0, MENU_ADD, 0, R.string.add_node).apply {
-                // Filled-tonal chip (accent_container disc + accent glyph): a
-                // clear affordance on the black canvas, where a borderless
-                // glyph was easy to miss, and the tint comes from resources
-                // (no fragile runtime setTint over a black path).
+                // Borderless accent glyph (iOS nav-bar "+"): systemBlue reads
+                // clearly on both the white and black canvas, so no filled chip
+                // (DESIGN.md §5).
                 actionView = MaterialButton(
                     this@MainActivity,
                     null,
-                    com.google.android.material.R.attr.materialIconButtonFilledTonalStyle,
+                    com.google.android.material.R.attr.materialIconButtonStyle,
                 ).apply {
                     setIconResource(R.drawable.ic_add)
                     iconTint = ColorStateList.valueOf(color(R.color.accent))
@@ -216,7 +240,7 @@ class MainActivity : AppCompatActivity() {
             if ((scrollers[id]?.scrollY ?: 0) > 0) View.VISIBLE else View.INVISIBLE
         // Only stream log updates while the Logs panel is on screen.
         LogStore.onChange = if (id == ID_LOGS) ({ renderLogs() }) else null
-        if (id == ID_NODES) renderSavedPeers()
+        if (id == ID_NODES) { renderSavedPeers(); renderDiscovered() }
         if (id == ID_LOGS) renderLogs()
     }
 
@@ -240,7 +264,7 @@ class MainActivity : AppCompatActivity() {
                 setPadding(dp(16), dp(10), dp(16), dp(10))
             }
             statusDot = View(this@MainActivity).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(10), dp(10)).apply { rightMargin = dp(10) }
+                layoutParams = LinearLayout.LayoutParams(dp(10), dp(10)).apply { marginEnd = dp(10) }
                 background = oval(color(R.color.ios_gray))
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
@@ -296,12 +320,12 @@ class MainActivity : AppCompatActivity() {
             }
             row.addView(texts, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             row.addView(
-                TextView(this@MainActivity).apply {
-                    text = "\u203a"
-                    textSize = 26f
-                    setTextColor(color(R.color.label_tertiary))
+                ImageView(this@MainActivity).apply {
+                    setImageResource(R.drawable.ic_chevron)
+                    imageTintList = ColorStateList.valueOf(color(R.color.label_tertiary))
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 },
+                LinearLayout.LayoutParams(dp(22), dp(22)),
             )
             addView(row)
         }
@@ -318,12 +342,17 @@ class MainActivity : AppCompatActivity() {
     private fun nodesSection(): View {
         peersHeader = sectionLabel(getString(R.string.peers_connected))
         peersBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        discoveredHeader = sectionLabel(getString(R.string.add_node_discovered))
+        discoveredBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        discoveredCard = card { addView(discoveredBox) }
         savedBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(12))
             addView(peersHeader)
             addView(card { addView(peersBox) })
+            addView(discoveredHeader)
+            addView(discoveredCard)
             addView(sectionLabel(getString(R.string.saved_peers)))
             addView(card { addView(savedBox) })
         }
@@ -335,6 +364,12 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(12))
         }
+        root.addView(sectionLabel(getString(R.string.sec_appearance)))
+        root.addView(
+            card {
+                appearanceValue = navRow(getString(R.string.set_appearance), themeLabel(prefs.theme)) { showThemeDialog() }
+            },
+        )
         root.addView(sectionLabel(getString(R.string.sec_identity)))
         root.addView(
             card {
@@ -351,16 +386,39 @@ class MainActivity : AppCompatActivity() {
                 divider()
                 maxPeers = fieldRow(getString(R.string.set_max_peers), getString(R.string.set_max_peers_ex), prefs.maxPeers.takeIf { it > 0 }?.toString() ?: "", numeric = true)
                 divider()
+                discoverDelay = fieldRow(getString(R.string.set_discover_delay), getString(R.string.set_discover_delay_ex), prefs.discoverDelay.toString(), numeric = true)
+                divider()
+                keepAlive = fieldRow(getString(R.string.set_keep_alive), getString(R.string.set_keep_alive_ex), prefs.keepAlive.toString(), numeric = true)
+                divider()
                 useTcp = switchRow(getString(R.string.set_tcp), getString(R.string.set_tcp_sub), prefs.transport == "tcp")
                 divider()
                 discover = switchRow(getString(R.string.set_discover), getString(R.string.set_discover_sub), prefs.discover)
+                divider()
+                wifiOnly = switchRow(getString(R.string.set_wifi_only), getString(R.string.set_wifi_only_sub), prefs.wifiOnly)
             },
         )
         root.addView(footerLabel(getString(R.string.footer_apply)))
+        root.addView(sectionLabel(getString(R.string.sec_clipboard)))
+        root.addView(
+            card {
+                sendClip = switchRow(getString(R.string.set_send), getString(R.string.set_send_sub), prefs.sendEnabled)
+                divider()
+                receiveClip = switchRow(getString(R.string.set_receive), getString(R.string.set_receive_sub), prefs.receiveEnabled)
+                divider()
+                allowFiles = switchRow(getString(R.string.set_files), getString(R.string.set_files_sub), prefs.allowFiles)
+                divider()
+                maxFileSize = fieldRow(getString(R.string.set_max_file_size), getString(R.string.set_max_file_size_ex), prefs.maxFileSizeMiB.toString(), numeric = true)
+                divider()
+                maxClipboardFiles = fieldRow(getString(R.string.set_max_files), getString(R.string.set_max_files_ex), prefs.maxClipboardFiles.toString(), numeric = true)
+            },
+        )
+        root.addView(footerLabel(getString(R.string.footer_clipboard)))
         root.addView(sectionLabel(getString(R.string.sec_behavior)))
         root.addView(
             card {
                 autostart = switchRow(getString(R.string.set_autostart), getString(R.string.set_autostart_sub), prefs.autostart)
+                divider()
+                bgDiscovery = switchRow(getString(R.string.set_bg_discovery), getString(R.string.set_bg_discovery_sub), prefs.bgDiscovery)
                 divider()
                 verbose = switchRow(getString(R.string.set_verbose), null, prefs.verbose)
             },
@@ -382,16 +440,65 @@ class MainActivity : AppCompatActivity() {
                 unlockBtn = buttonRow(getString(R.string.unlock_install)) { toggleUnlockModule() }
             },
         )
+        root.addView(sectionLabel(getString(R.string.sec_peers)))
+        root.addView(
+            card {
+                buttonRow(getString(R.string.peers_clear)) { clearSavedPeers() }.setTextColor(color(R.color.ios_red))
+            },
+        )
+        root.addView(footerLabel(getString(R.string.footer_peers)))
 
         // iOS-style settings: no Save button, changes persist as they are made
         // (the running node picks them up on its next start).
-        for (field in arrayOf(deviceName, secret, port, maxPeers)) {
+        for (field in arrayOf(deviceName, secret, port, maxPeers, discoverDelay, keepAlive, maxFileSize, maxClipboardFiles)) {
             field.doAfterTextChanged { save() }
         }
-        for (sw in arrayOf(useTcp, discover, autostart, verbose, checkUpdates)) {
+        for (sw in arrayOf(useTcp, discover, wifiOnly, sendClip, receiveClip, allowFiles, autostart, bgDiscovery, verbose, checkUpdates)) {
             sw.setOnCheckedChangeListener { _, _ -> save() }
         }
         return scroll(root).also { scrollers[ID_SETTINGS] = it }
+    }
+
+    private fun themeMode(theme: String) = when (theme) {
+        "light" -> AppCompatDelegate.MODE_NIGHT_NO
+        "dark" -> AppCompatDelegate.MODE_NIGHT_YES
+        else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+    }
+
+    private fun themeLabel(theme: String) = getString(
+        when (theme) {
+            "light" -> R.string.appearance_light
+            "dark" -> R.string.appearance_dark
+            else -> R.string.appearance_system
+        },
+    )
+
+    private fun showThemeDialog() {
+        val keys = arrayOf("system", "light", "dark")
+        val labels = keys.map { themeLabel(it) }.toTypedArray()
+        val current = keys.indexOf(prefs.theme).coerceAtLeast(0)
+        MaterialAlertDialogBuilder(this)
+            .setCustomTitle(dialogTitle(getString(R.string.set_appearance)))
+            .setSingleChoiceItems(labels, current) { d, which ->
+                prefs.theme = keys[which]
+                appearanceValue.text = themeLabel(prefs.theme)
+                d.dismiss()
+                AppCompatDelegate.setDefaultNightMode(themeMode(prefs.theme))
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    private fun clearSavedPeers() {
+        MaterialAlertDialogBuilder(this)
+            .setCustomTitle(dialogTitle(getString(R.string.peers_clear_confirm)))
+            .setPositiveButton(R.string.action_clear) { _, _ ->
+                prefs.peers = ""
+                renderSavedPeers()
+                toast(getString(R.string.peers_cleared))
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
     }
 
     private fun logsSection(): View {
@@ -430,7 +537,7 @@ class MainActivity : AppCompatActivity() {
         val errorText = dimText().apply {
             setTextColor(color(R.color.ios_red))
             visibility = View.GONE
-            setPadding(dp(4), dp(6), 0, 0)
+            setPaddingRelative(dp(4), dp(6), 0, 0)
         }
         fun setError(msg: String?) {
             if (msg == null) {
@@ -458,15 +565,6 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton(R.string.action_add, null)
             .setNegativeButton(R.string.action_cancel, null)
             .create()
-        // One-tap add for peers heard via LAN discovery, besides manual ip:port.
-        val saved = prefs.peerList().toSet()
-        for ((name, addr) in discoveredPeers()) {
-            if (addr in saved) continue
-            if (content.childCount == 2) {
-                content.addView(sectionLabel(getString(R.string.add_node_discovered)).apply { setPadding(0, dp(16), 0, dp(7)) })
-            }
-            content.addView(tintedButton(peerLabel(name, addr)) { addPeer(addr); dialog.dismiss() }, fullWidth(dp(6)))
-        }
         dialog.setOnShowListener {
             dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
                 val addr = input.text.toString().trim()
@@ -518,11 +616,13 @@ class MainActivity : AppCompatActivity() {
             )
         }
         renderSavedPeers()
+        renderDiscovered()
     }
 
     private fun removePeer(addr: String) {
         prefs.peers = prefs.peerList().filter { it != addr }.joinToString("\n")
         renderSavedPeers()
+        renderDiscovered()
     }
 
     private fun emptyRow(text: String): TextView = dimText().apply {
@@ -544,7 +644,7 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(16), dp(2), dp(8), dp(2))
+                    setPaddingRelative(dp(16), dp(2), dp(8), dp(2))
                     addView(
                         TextView(this@MainActivity).apply {
                             text = addr
@@ -566,27 +666,76 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun renderDiscovered() {
+        if (!::discoveredBox.isInitialized || currentSection != ID_NODES) return
+        val saved = prefs.peerList().toSet()
+        val list = discoveredPeers().filter { (_, addr) -> addr !in saved }
+        val sig = list.joinToString("|") { it.second }
+        if (sig == lastDiscoveredSig) return
+        lastDiscoveredSig = sig
+        val visible = list.isNotEmpty()
+        discoveredHeader.visibility = if (visible) View.VISIBLE else View.GONE
+        discoveredCard.visibility = if (visible) View.VISIBLE else View.GONE
+        discoveredBox.removeAllViews()
+        for ((i, peer) in list.withIndex()) {
+            if (i > 0) discoveredBox.divider()
+            discoveredBox.addView(discoveredRow(peer.first, peer.second))
+        }
+    }
+
+    /** "Found on your network" row: tap to save the discovered peer. */
+    private fun discoveredRow(name: String, addr: String): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(44)
+            setPaddingRelative(dp(16), dp(6), dp(12), dp(6))
+            setBackgroundResource(resolveAttrRes(android.R.attr.selectableItemBackground))
+            contentDescription = getString(R.string.add_node) + " \u00b7 " + peerLabel(name, addr)
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = peerLabel(name, addr)
+                    textSize = 17f
+                    setTextColor(color(R.color.label))
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                },
+                LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f),
+            )
+            addView(
+                ImageView(this@MainActivity).apply {
+                    setImageResource(R.drawable.ic_add)
+                    imageTintList = ColorStateList.valueOf(color(R.color.accent))
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                },
+                LinearLayout.LayoutParams(dp(22), dp(22)),
+            )
+            setOnClickListener { addPeer(addr) }
+        }
+
     private fun refreshStatus() {
+        renderDiscovered()
         val json = NodeState.statusJson()
         val starting = json == null && SystemClock.uptimeMillis() < startingUntil
+        val paused = json == null && NodeState.pausedForNetwork
         // Skip identical ticks: an idle node re-emits the same snapshot, so there
         // is no need to re-marshal, re-parse, or rebuild any views.
-        if (statusRendered && json == lastStatusJson && starting == lastStarting) return
+        if (statusRendered && json == lastStatusJson && starting == lastStarting && paused == lastPaused) return
         statusRendered = true
         lastStatusJson = json
         lastStarting = starting
+        lastPaused = paused
 
         if (json == null) {
-            statusDot.background = oval(color(if (starting) R.color.ios_orange else R.color.ios_gray))
-            statusText.text = getString(if (starting) R.string.status_starting else R.string.status_stopped)
-            setSwitch(starting)
+            statusDot.background = oval(color(if (paused || starting) R.color.ios_orange else R.color.ios_gray))
+            statusText.text = getString(if (paused) R.string.status_paused else if (starting) R.string.status_starting else R.string.status_stopped)
+            setSwitch(starting || paused)
             selfText.text = prefs.deviceName.ifBlank { Build.MODEL ?: "Android" }
-            metaText.text = if (starting) "" else getString(R.string.status_offline_hint)
+            metaText.text = if (paused) getString(R.string.status_wifi_wait) else if (starting) "" else getString(R.string.status_offline_hint)
             summaryText.text = getString(R.string.dash_placeholder)
             peersHeader.text = getString(R.string.peers_connected)
             peersBox.removeAllViews()
             peersBox.addView(
-                emptyRow(getString(if (starting) R.string.status_starting else R.string.peers_service_off)),
+                emptyRow(getString(if (paused) R.string.status_wifi_wait else if (starting) R.string.status_starting else R.string.peers_service_off)),
             )
             return
         }
@@ -640,7 +789,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(16), dp(11), dp(16), dp(11))
             addView(
                 View(this@MainActivity).apply {
-                    layoutParams = LinearLayout.LayoutParams(dp(9), dp(9)).apply { rightMargin = dp(12) }
+                    layoutParams = LinearLayout.LayoutParams(dp(9), dp(9)).apply { marginEnd = dp(12) }
                     background = oval(color(R.color.ios_green))
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 },
@@ -672,6 +821,7 @@ class MainActivity : AppCompatActivity() {
     private fun stopNode() {
         stopService(Intent(this, BelphegorService::class.java))
         NodeState.node = null
+        NodeState.pausedForNetwork = false
         startingUntil = 0L
         refreshStatus()
     }
@@ -697,6 +847,11 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         refreshUnlockButton()
         refreshBatteryButton()
+        // Opening/returning to the app re-dials saved peers if the link dropped
+        // while backgrounded (the core does not auto-reconnect on its own).
+        if (NodeState.node != null) {
+            launchService(Intent(this, BelphegorService::class.java).setAction(BelphegorService.ACTION_CONNECT))
+        }
         if (currentSection == ID_LOGS) {
             LogStore.onChange = { renderLogs() }
             renderLogs()
@@ -738,6 +893,15 @@ class MainActivity : AppCompatActivity() {
         prefs.verbose = verbose.isChecked
         prefs.autostart = autostart.isChecked
         prefs.checkUpdates = checkUpdates.isChecked
+        prefs.discoverDelay = discoverDelay.text.toString().trim().toIntOrNull() ?: 30
+        prefs.keepAlive = keepAlive.text.toString().trim().toIntOrNull() ?: 60
+        prefs.maxFileSizeMiB = maxFileSize.text.toString().trim().toIntOrNull() ?: 16
+        prefs.maxClipboardFiles = maxClipboardFiles.text.toString().trim().toIntOrNull() ?: 15
+        prefs.allowFiles = allowFiles.isChecked
+        prefs.sendEnabled = sendClip.isChecked
+        prefs.receiveEnabled = receiveClip.isChecked
+        prefs.wifiOnly = wifiOnly.isChecked
+        prefs.bgDiscovery = bgDiscovery.isChecked
     }
 
     private fun refreshUnlockButton() {

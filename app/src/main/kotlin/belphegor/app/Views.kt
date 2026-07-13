@@ -14,6 +14,7 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -22,7 +23,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.AccessibilityDelegateCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.materialswitch.MaterialSwitch
 
@@ -57,6 +57,10 @@ class CappedFrame(context: Context, private val maxWidth: Int) : FrameLayout(con
 }
 
 const val CONTENT_MAX_WIDTH_DP = 640
+
+/** At/above this system font scale, label/value rows stack vertically so the
+ * value keeps room instead of colliding with its label (HIG Dynamic Type). */
+const val LARGE_FONT_SCALE = 1.3f
 
 fun Context.capped(child: View): CappedFrame =
     CappedFrame(this, dp(CONTENT_MAX_WIDTH_DP)).apply {
@@ -99,7 +103,7 @@ fun LinearLayout.divider() {
     addView(
         View(context).apply {
             setBackgroundColor(context.color(R.color.separator))
-            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 1).apply { leftMargin = context.dp(16) }
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 1).apply { marginStart = context.dp(16) }
         },
     )
 }
@@ -121,13 +125,13 @@ fun Context.sectionLabel(t: String) = TextView(this).apply {
     isAllCaps = true
     textSize = 13f
     setTextColor(color(R.color.label_secondary))
-    setPadding(dp(16), 0, dp(16), dp(7))
+    setPaddingRelative(dp(16), 0, dp(16), dp(7))
 }
 
 /** Section footer: Footnote 13 sentence case, sits under a card. */
 fun Context.footerLabel(t: String) = dimText().apply {
     text = t
-    setPadding(dp(16), 0, dp(16), 0)
+    setPaddingRelative(dp(16), 0, dp(16), 0)
     layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = -dp(14); bottomMargin = dp(24) }
 }
 
@@ -139,7 +143,7 @@ fun LinearLayout.buttonRow(label: String, onClick: () -> Unit): TextView {
         setTextColor(context.color(R.color.accent))
         minHeight = context.dp(44)
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(context.dp(16), context.dp(11), context.dp(16), context.dp(11))
+        setPaddingRelative(context.dp(16), context.dp(11), context.dp(16), context.dp(11))
         setBackgroundResource(context.resolveAttrRes(android.R.attr.selectableItemBackground))
         setOnClickListener { onClick() }
     }
@@ -158,17 +162,45 @@ fun LinearLayout.buttonRow(label: String, onClick: () -> Unit): TextView {
     return row
 }
 
-/** Tinted button (accent text on 15% accent fill) — dialog quick-actions. */
-fun Context.tintedButton(label: String, onClick: () -> Unit) =
-    MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-        text = label
-        strokeWidth = 0
-        cornerRadius = dp(10)
-        backgroundTintList = ColorStateList.valueOf(color(R.color.accent_tint))
-        setTextColor(color(R.color.accent))
-        minHeight = dp(44)
+/**
+ * iOS "label -> value" disclosure row: leading label, trailing secondary value
+ * plus a chevron; the whole row is tappable. Returns the value view so the
+ * caller can refresh it after a picker.
+ */
+fun LinearLayout.navRow(label: String, value: String, onClick: () -> Unit): TextView {
+    val valueView = TextView(context).apply {
+        text = value
+        textSize = 17f
+        setTextColor(context.color(R.color.label_secondary))
+        gravity = Gravity.END or Gravity.CENTER_VERTICAL
+    }
+    val row = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = context.dp(44)
+        setPaddingRelative(context.dp(16), context.dp(6), context.dp(16), context.dp(6))
+        setBackgroundResource(context.resolveAttrRes(android.R.attr.selectableItemBackground))
+        addView(
+            TextView(context).apply {
+                text = label
+                textSize = 17f
+                setTextColor(context.color(R.color.label))
+            },
+        )
+        addView(valueView, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        addView(
+            ImageView(context).apply {
+                setImageResource(R.drawable.ic_chevron)
+                imageTintList = ColorStateList.valueOf(context.color(R.color.label_tertiary))
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            },
+            LinearLayout.LayoutParams(context.dp(22), context.dp(22)).apply { marginStart = context.dp(6) },
+        )
         setOnClickListener { onClick() }
     }
+    addView(row)
+    return valueView
+}
 
 fun Context.resolveAttrRes(attr: Int): Int {
     val tv = TypedValue()
@@ -187,6 +219,9 @@ fun LinearLayout.fieldRow(
     value: String,
     numeric: Boolean = false,
 ): EditText {
+    // At large Dynamic Type sizes a horizontal label + right-aligned value
+    // collide, so stack them (label above value) like iOS Settings does.
+    val stacked = context.resources.configuration.fontScale >= LARGE_FONT_SCALE
     val et = EditText(context).apply {
         id = View.generateViewId()
         setText(value)
@@ -194,7 +229,7 @@ fun LinearLayout.fieldRow(
         textSize = 17f
         background = null
         isSingleLine = true
-        gravity = Gravity.END or Gravity.CENTER_VERTICAL
+        gravity = (if (stacked) Gravity.START else Gravity.END) or Gravity.CENTER_VERTICAL
         setTextColor(context.color(R.color.label))
         setHintTextColor(context.color(R.color.label_tertiary))
         inputType = if (numeric) {
@@ -202,22 +237,26 @@ fun LinearLayout.fieldRow(
         } else {
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         }
-        setPadding(context.dp(12), context.dp(11), 0, context.dp(11))
+        setPaddingRelative(if (stacked) 0 else context.dp(12), context.dp(11), 0, context.dp(11))
+    }
+    val labelView = TextView(context).apply {
+        text = label
+        textSize = 17f
+        setTextColor(context.color(R.color.label))
+        labelFor = et.id
     }
     val row = LinearLayout(context).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
+        orientation = if (stacked) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        gravity = if (stacked) Gravity.START else Gravity.CENTER_VERTICAL
         minimumHeight = context.dp(44)
-        setPadding(context.dp(16), 0, context.dp(16), 0)
-        addView(
-            TextView(context).apply {
-                text = label
-                textSize = 17f
-                setTextColor(context.color(R.color.label))
-                labelFor = et.id
-            },
-        )
-        addView(et, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        setPaddingRelative(context.dp(16), if (stacked) context.dp(6) else 0, context.dp(16), if (stacked) context.dp(6) else 0)
+        if (stacked) {
+            addView(labelView, fullWidth())
+            addView(et, fullWidth())
+        } else {
+            addView(labelView)
+            addView(et, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        }
     }
     addView(row)
     return et
@@ -279,7 +318,7 @@ fun LinearLayout.switchRow(title: String, subtitle: String?, checked: Boolean): 
         gravity = Gravity.CENTER_VERTICAL
         minimumHeight = context.dp(44)
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        setPadding(context.dp(16), context.dp(8), context.dp(16), context.dp(8))
+        setPaddingRelative(context.dp(16), context.dp(8), context.dp(16), context.dp(8))
         addView(texts, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         addView(sw)
         setOnClickListener { sw.toggle() }

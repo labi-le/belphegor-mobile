@@ -27,6 +27,7 @@ import (
 	"io"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/labi-le/belphegor/internal/channel"
 	"github.com/labi-le/belphegor/internal/node"
@@ -37,6 +38,7 @@ import (
 	"github.com/labi-le/belphegor/internal/transport/tcp"
 	"github.com/labi-le/belphegor/internal/types/domain"
 	"github.com/labi-le/belphegor/pkg/clipboard/android"
+	"github.com/labi-le/belphegor/pkg/clipboard/eventful"
 	"github.com/labi-le/belphegor/pkg/id"
 	"github.com/rs/zerolog"
 )
@@ -90,16 +92,36 @@ type Config struct {
 	// SELinux denies the core's net.Interfaces() MAC lookup (it would fall back
 	// to a constant 1, colliding every phone). <= 0 keeps the core's own id.
 	NodeID int
+	// AllowCopyFiles lets the node receive and announce file clipboard items
+	// (not just text/images). Default true.
+	AllowCopyFiles bool
+	// MaxFileSizeBytes caps a single received payload in bytes; <= 0 uses the
+	// mobile default (16 MiB). Hard-capped at 256 MiB regardless of the host.
+	MaxFileSizeBytes int64
+	// MaxClipboardFiles caps how many files one copy may announce; <= 0 uses
+	// the core default (15).
+	MaxClipboardFiles int
+	// DiscoverDelaySec is the LAN discovery scan interval in seconds; <= 0 uses
+	// the default (30). Duration isn't gomobile-safe, hence seconds.
+	DiscoverDelaySec int
+	// KeepAliveSec is the peer keep-alive interval in seconds; <= 0 uses the
+	// default (60).
+	KeepAliveSec int
 }
 
 // NewConfig returns a Config with the same defaults the desktop uses.
 func NewConfig() *Config {
 	def := node.DefaultOptions()
 	return &Config{
-		Port:      def.ListenPort,
-		Transport: def.Transport.String(),
-		Discover:  def.Discovering.Enable,
-		MaxPeers:  def.MaxPeers,
+		Port:              def.ListenPort,
+		Transport:         def.Transport.String(),
+		Discover:          def.Discovering.Enable,
+		MaxPeers:          def.MaxPeers,
+		AllowCopyFiles:    def.Clip.AllowCopyFiles,
+		MaxFileSizeBytes:  16 << 20,
+		MaxClipboardFiles: def.Clip.MaxClipboardFiles,
+		DiscoverDelaySec:  int(def.Discovering.Delay / time.Second),
+		KeepAliveSec:      int(def.KeepAlive / time.Second),
 	}
 }
 
@@ -178,13 +200,28 @@ func Start(cfg *Config, handler Handler, logs LogSink) (*Node, error) {
 		meta.Name = cfg.DeviceName
 	}
 	opts.Metadata = meta
-	// Cap the max payload on a phone. The desktop default (512 MiB) lets a
-	// single peer OOM the process; a phone never needs a clipboard item that
-	// large, and in open-mesh mode the sender is unauthenticated.
-	const mobileMaxFileSize = 16 << 20 // 16 MiB
-	if opts.Clip.MaxFileSize == 0 || uint64(opts.Clip.MaxFileSize) > mobileMaxFileSize {
-		opts.Clip.MaxFileSize = mobileMaxFileSize
+	opts.Clip.AllowCopyFiles = cfg.AllowCopyFiles
+	if cfg.MaxClipboardFiles > 0 {
+		opts.Clip.MaxClipboardFiles = cfg.MaxClipboardFiles
 	}
+	if cfg.DiscoverDelaySec > 0 {
+		opts.Discovering.Delay = time.Duration(cfg.DiscoverDelaySec) * time.Second
+	}
+	if cfg.KeepAliveSec > 0 {
+		opts.KeepAlive = time.Duration(cfg.KeepAliveSec) * time.Second
+	}
+	// Clamp the max payload on a phone. The desktop default (512 MiB) lets a
+	// single peer OOM the process; keep a hard ceiling even if the host asks
+	// for more (in open-mesh mode the sender is unauthenticated).
+	const mobileMaxFileSize = 256 << 20 // 256 MiB hard ceiling
+	wantSize := cfg.MaxFileSizeBytes
+	if wantSize <= 0 {
+		wantSize = 16 << 20 // mobile default
+	}
+	if wantSize > mobileMaxFileSize {
+		wantSize = mobileMaxFileSize
+	}
+	opts.Clip.MaxFileSize = eventful.MaxFileSize(wantSize)
 	opts = opts.Validated()
 
 	tlsConfig, err := security.MakeTLSConfig(opts.Secret, logger)

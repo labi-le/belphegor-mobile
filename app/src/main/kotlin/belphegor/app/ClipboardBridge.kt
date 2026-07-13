@@ -29,11 +29,15 @@ class ClipboardBridge(
     @Volatile
     var node: Node? = null
 
+    /** Read live so the Send/Receive toggles in Settings take effect at once. */
+    private val prefs = Prefs(context)
+
     /** Sink for remote payloads. Registered with Mobile.start(cfg, handler). */
-    val handler: Handler = Handler { mimeType, data -> writeLocal(mimeType, data) }
+    val handler: Handler = Handler { mimeType, data -> if (prefs.receiveEnabled) writeLocal(mimeType, data) }
 
     /** Fires on every local clipboard change; forwards it to the mesh. */
     val listener = ClipboardManager.OnPrimaryClipChangedListener {
+        if (!prefs.sendEnabled) return@OnPrimaryClipChangedListener
         val n = node ?: return@OnPrimaryClipChangedListener
         val clip = cm.primaryClip ?: return@OnPrimaryClipChangedListener
         if (clip.itemCount == 0) return@OnPrimaryClipChangedListener

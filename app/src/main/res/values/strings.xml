@@ -93,4 +93,49 @@
     <string name="update_later">Later</string>
     <string name="update_downloading">Downloading\u2026 %d%%</string>
     <string name="update_download_failed">Download failed: %s</string>
+
+    <!-- appearance -->
+    <string name="sec_appearance">APPEARANCE</string>
+    <string name="set_appearance">Appearance</string>
+    <string name="appearance_system">System</string>
+    <string name="appearance_light">Light</string>
+    <string name="appearance_dark">Dark</string>
+
+    <!-- network (added) -->
+    <string name="set_discover_delay">Discovery interval (s)</string>
+    <string name="set_discover_delay_ex">30</string>
+    <string name="set_keep_alive">Keep-alive (s)</string>
+    <string name="set_keep_alive_ex">60</string>
+    <string name="set_wifi_only">Wi-Fi only</string>
+    <string name="set_wifi_only_sub">Pause sync on mobile data</string>
+
+    <!-- clipboard -->
+    <string name="sec_clipboard">CLIPBOARD</string>
+    <string name="set_send">Send clipboard</string>
+    <string name="set_send_sub">Share what you copy on this device</string>
+    <string name="set_receive">Receive clipboard</string>
+    <string name="set_receive_sub">Apply clipboard from other devices</string>
+    <string name="set_files">Sync files</string>
+    <string name="set_files_sub">Receive files, not just text and images</string>
+    <string name="set_max_file_size">Max file size (MiB)</string>
+    <string name="set_max_file_size_ex">16</string>
+    <string name="set_max_files">Max files per copy</string>
+    <string name="set_max_files_ex">15</string>
+    <string name="footer_clipboard">Send and receive apply immediately. File size and count take effect the next time sync starts.</string>
+
+    <!-- behavior (added) -->
+    <string name="set_bg_discovery">Discover in background</string>
+    <string name="set_bg_discovery_sub">Keep finding peers with the screen off (more battery)</string>
+
+    <!-- peers -->
+    <string name="sec_peers">PEERS</string>
+    <string name="peers_clear">Clear saved peers</string>
+    <string name="peers_clear_confirm">Clear all saved peers?</string>
+    <string name="peers_cleared">Saved peers cleared</string>
+    <string name="footer_peers">Removes every saved peer address. Connected peers stay until they disconnect.</string>
+
+    <!-- status (added) -->
+    <string name="status_paused">Paused</string>
+    <string name="status_wifi_wait">Waiting for Wi-Fi</string>
+    <string name="notif_waiting_wifi">Paused - waiting for Wi-Fi</string>
 </resources>

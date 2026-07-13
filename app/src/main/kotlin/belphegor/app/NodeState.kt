@@ -11,7 +11,13 @@ object NodeState {
     @Volatile
     var node: Node? = null
 
-    val running: Boolean get() = node != null
+    /** True while the service is alive but the node is intentionally paused by
+     *  network policy (Wi-Fi-only on mobile data) — the dashboard shows
+     *  "Paused", not "Stopped", and keeps the sync switch on. */
+    @Volatile
+    var pausedForNetwork = false
+
+    val running: Boolean get() = node != null || pausedForNetwork
 
     /** JSON status snapshot from the core, or null when no node is running. */
     fun statusJson(): String? = node?.let { runCatching { it.statusJSON() }.getOrNull() }

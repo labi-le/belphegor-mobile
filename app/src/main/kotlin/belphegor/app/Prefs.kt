@@ -47,6 +47,56 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_CHECK_UPDATES, true)
         set(v) = sp.edit().putBoolean(KEY_CHECK_UPDATES, v).apply()
 
+    /** Receive/announce file clipboard items, not just text/images. */
+    var allowFiles: Boolean
+        get() = sp.getBoolean(KEY_ALLOW_FILES, true)
+        set(v) = sp.edit().putBoolean(KEY_ALLOW_FILES, v).apply()
+
+    /** Max received payload size in MiB (the core hard-caps at 256). */
+    var maxFileSizeMiB: Int
+        get() = sp.getInt(KEY_MAX_FILE_SIZE, 16)
+        set(v) = sp.edit().putInt(KEY_MAX_FILE_SIZE, v).apply()
+
+    /** Max files announced in a single copy. */
+    var maxClipboardFiles: Int
+        get() = sp.getInt(KEY_MAX_FILES, 15)
+        set(v) = sp.edit().putInt(KEY_MAX_FILES, v).apply()
+
+    /** LAN discovery scan interval, seconds. */
+    var discoverDelay: Int
+        get() = sp.getInt(KEY_DISCOVER_DELAY, 30)
+        set(v) = sp.edit().putInt(KEY_DISCOVER_DELAY, v).apply()
+
+    /** Peer keep-alive interval, seconds. */
+    var keepAlive: Int
+        get() = sp.getInt(KEY_KEEP_ALIVE, 60)
+        set(v) = sp.edit().putInt(KEY_KEEP_ALIVE, v).apply()
+
+    /** Share what you copy on this device to the mesh. */
+    var sendEnabled: Boolean
+        get() = sp.getBoolean(KEY_SEND, true)
+        set(v) = sp.edit().putBoolean(KEY_SEND, v).apply()
+
+    /** Apply clipboard received from peers to this device. */
+    var receiveEnabled: Boolean
+        get() = sp.getBoolean(KEY_RECEIVE, true)
+        set(v) = sp.edit().putBoolean(KEY_RECEIVE, v).apply()
+
+    /** Pause sync while on a metered (mobile-data) network. */
+    var wifiOnly: Boolean
+        get() = sp.getBoolean(KEY_WIFI_ONLY, false)
+        set(v) = sp.edit().putBoolean(KEY_WIFI_ONLY, v).apply()
+
+    /** Keep LAN discovery (multicast lock) alive with the screen off. */
+    var bgDiscovery: Boolean
+        get() = sp.getBoolean(KEY_BG_DISCOVERY, false)
+        set(v) = sp.edit().putBoolean(KEY_BG_DISCOVERY, v).apply()
+
+    /** UI theme: "system" (default), "light", or "dark". */
+    var theme: String
+        get() = sp.getString(KEY_THEME, "system") ?: "system"
+        set(v) = sp.edit().putString(KEY_THEME, v).apply()
+
     /** Newline-separated "ip:port" peers to dial on start / on demand. */
     var peers: String
         get() = sp.getString(KEY_PEERS, "") ?: ""
@@ -85,5 +135,15 @@ class Prefs(context: Context) {
         const val KEY_AUTOSTART = "autostart"
         const val KEY_CHECK_UPDATES = "check_updates"
         const val KEY_NODE_ID = "node_id"
+        const val KEY_ALLOW_FILES = "allow_files"
+        const val KEY_MAX_FILE_SIZE = "max_file_size_mib"
+        const val KEY_MAX_FILES = "max_clipboard_files"
+        const val KEY_DISCOVER_DELAY = "discover_delay"
+        const val KEY_KEEP_ALIVE = "keep_alive"
+        const val KEY_SEND = "send_enabled"
+        const val KEY_RECEIVE = "receive_enabled"
+        const val KEY_WIFI_ONLY = "wifi_only"
+        const val KEY_BG_DISCOVERY = "bg_discovery"
+        const val KEY_THEME = "theme"
     }
 }
