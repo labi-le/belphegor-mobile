@@ -27,7 +27,6 @@ type Discoverer interface {
 const (
 	multicastAddr = "239.255.255.250"
 	multicastPort = 9999
-	readTimeout   = 2 * time.Second
 	multicastTTL  = 2
 	// Rebuild the sockets periodically so multicast membership survives a Wi-Fi
 	// change (INADDR_ANY silently drops the group when the interface changes),
@@ -106,28 +105,34 @@ func (d *multicastDiscoverer) serve(ctx context.Context, c discovering.Connector
 	go d.broadcast(bctx, send, group, c)
 
 	d.logger.Info().Str("group", group.String()).Msg("LAN discovery joined (netlink-free)")
-	rejoin := time.NewTimer(rejoinEvery)
-	defer rejoin.Stop()
+	// Interrupt the blocking read the instant ctx is cancelled: a past deadline
+	// unblocks ReadFromUDP without any periodic poll.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = recv.SetReadDeadline(time.Now())
+		case <-done:
+		}
+	}()
+
+	// One absolute deadline for the whole membership: the read blocks (no CPU,
+	// no timer churn) until a datagram arrives or the rejoin instant passes,
+	// instead of waking every couple of seconds to re-check. Absolute, so it
+	// still fires the rejoin on schedule across any number of received packets.
+	_ = recv.SetReadDeadline(time.Now().Add(rejoinEvery))
 
 	buf := make([]byte, 65536)
 	for {
-		if ctx.Err() != nil {
-			return true
-		}
-		select {
-		case <-rejoin.C:
-			return true // rebuild sockets to refresh membership after a network change
-		default:
-		}
-		_ = recv.SetReadDeadline(time.Now().Add(readTimeout))
 		n, src, rErr := recv.ReadFromUDP(buf)
 		if rErr != nil {
-			var ne net.Error
-			if errors.As(rErr, &ne) && ne.Timeout() {
-				continue
-			}
 			if ctx.Err() != nil {
 				return true
+			}
+			var ne net.Error
+			if errors.As(rErr, &ne) && ne.Timeout() {
+				return true // rejoin deadline reached: rebuild sockets to refresh membership
 			}
 			// A non-timeout error means the socket/interface went away (Wi-Fi
 			// change); rejoin.
