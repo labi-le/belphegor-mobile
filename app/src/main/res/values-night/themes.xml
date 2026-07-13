@@ -8,9 +8,14 @@
         <item name="colorOnPrimary">#FFFFFFFF</item>
         <item name="colorPrimaryContainer">@color/accent</item>
         <item name="colorOnPrimaryContainer">#FFFFFFFF</item>
-        <item name="colorSecondaryContainer">#FF0E3A6E</item>
-        <item name="colorOnSecondaryContainer">#FF9CC7FF</item>
+        <item name="colorSecondary">@color/accent</item>
+        <item name="colorSecondaryContainer">@color/accent_container</item>
+        <item name="colorOnSecondaryContainer">@color/on_accent_container</item>
         <item name="colorError">@color/ios_red</item>
+        <!-- See values/themes.xml: pin platform-control tint and selection
+             highlight so no M3 baseline purple / white-on-white leaks. -->
+        <item name="colorControlActivated">@color/accent</item>
+        <item name="android:textColorHighlight">@color/selection_highlight</item>
 
         <item name="android:colorBackground">@color/bg_canvas</item>
         <item name="android:windowBackground">@color/bg_canvas</item>
@@ -31,8 +36,10 @@
         <item name="android:statusBarColor">@color/bg_canvas</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:navigationBarColor">@color/bg_canvas</item>
+        <item name="android:windowLightNavigationBar">false</item>
         <item name="actionMenuTextColor">@color/accent</item>
         <item name="actionMenuTextAppearance">@style/TextAppearance.Belphegor.MenuAction</item>
         <item name="bottomNavigationStyle">@style/Widget.Belphegor.BottomNav</item>
+        <item name="shapeAppearanceCornerExtraLarge">@style/ShapeAppearance.Belphegor.Dialog</item>
     </style>
 </resources>

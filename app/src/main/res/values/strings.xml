@@ -36,7 +36,6 @@
     <string name="peer_remove_desc">Remove %s</string>
     <string name="add_node">Add node</string>
     <string name="add_node_msg">Enter the peer address as ip:port</string>
-    <string name="add_node_hint">Address</string>
     <string name="add_node_placeholder">192.168.1.10:7777</string>
     <string name="add_node_invalid">Enter a valid ip:port (e.g. 192.168.1.10:7777)</string>
     <string name="add_node_discovered">Found on your network</string>

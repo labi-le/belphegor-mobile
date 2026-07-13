@@ -12,6 +12,9 @@
     <color name="label_secondary">#993C3C43</color>       <!-- secondaryLabel 60% -->
     <color name="label_tertiary">#4D3C3C43</color>        <!-- tertiaryLabel 30% -->
     <color name="separator">#4A3C3C43</color>             <!-- separator 29% -->
+    <color name="selection_highlight">#4D007AFF</color>   <!-- accent 30%, text selection -->
+    <color name="accent_container">#FFD8E8FE</color>      <!-- accent-tinted container role -->
+    <color name="on_accent_container">#FF0A5DC2</color>
 
     <color name="bg_canvas">#FFF2F2F7</color>             <!-- systemGroupedBackground -->
     <color name="bg_card">#FFFFFFFF</color>               <!-- secondarySystemGroupedBackground -->

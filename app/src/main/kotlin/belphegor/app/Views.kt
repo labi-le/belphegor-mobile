@@ -11,12 +11,17 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import androidx.core.view.AccessibilityDelegateCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.materialswitch.MaterialSwitch
@@ -35,9 +40,35 @@ fun Context.color(res: Int): Int = ContextCompat.getColor(this, res)
 fun fullWidth(top: Int = 0) =
     LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = top }
 
+/**
+ * Caps its child at [maxWidth] so grouped lists keep a readable column on
+ * wide/landscape screens (HIG layout margins); parent gravity centers it.
+ */
+class CappedFrame(context: Context, private val maxWidth: Int) : FrameLayout(context) {
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val size = MeasureSpec.getSize(widthMeasureSpec)
+        val spec = if (size > maxWidth) {
+            MeasureSpec.makeMeasureSpec(maxWidth, MeasureSpec.getMode(widthMeasureSpec))
+        } else {
+            widthMeasureSpec
+        }
+        super.onMeasure(spec, heightMeasureSpec)
+    }
+}
+
+const val CONTENT_MAX_WIDTH_DP = 640
+
+fun Context.capped(child: View): CappedFrame =
+    CappedFrame(this, dp(CONTENT_MAX_WIDTH_DP)).apply {
+        addView(child, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+    }
+
 fun Context.scroll(child: View): ScrollView = ScrollView(this).apply {
     isFillViewport = true
-    addView(child)
+    addView(
+        capped(child),
+        FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.CENTER_HORIZONTAL),
+    )
 }
 
 fun Context.resolveColor(attr: Int): Int {
@@ -112,6 +143,17 @@ fun LinearLayout.buttonRow(label: String, onClick: () -> Unit): TextView {
         setBackgroundResource(context.resolveAttrRes(android.R.attr.selectableItemBackground))
         setOnClickListener { onClick() }
     }
+    // TalkBack: announce as a button, not plain text (the row replaced a
+    // MaterialButton in the redesign).
+    ViewCompat.setAccessibilityDelegate(
+        row,
+        object : AccessibilityDelegateCompat() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                info.className = Button::class.java.name
+            }
+        },
+    )
     addView(row, fullWidth())
     return row
 }
@@ -179,6 +221,26 @@ fun LinearLayout.fieldRow(
     }
     addView(row)
     return et
+}
+
+/** Rounded tertiary-fill surface for standalone (dialog) fields. */
+fun Context.fieldSurface(): GradientDrawable = GradientDrawable().apply {
+    cornerRadius = dp(10).toFloat()
+    setColor(color(R.color.bg_field))
+}
+
+/**
+ * Centered 20sp-medium dialog title (iOS alert style). M3 keeps its own
+ * alertTitle wrap_content and left-aligned, so we replace it wholesale via
+ * MaterialAlertDialogBuilder.setCustomTitle, matching M3's title padding.
+ */
+fun Context.dialogTitle(text: String): TextView = TextView(this).apply {
+    this.text = text
+    textSize = 20f
+    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    setTextColor(color(R.color.label))
+    gravity = Gravity.CENTER_HORIZONTAL
+    setPadding(dp(24), dp(20), dp(24), dp(2))
 }
 
 /** iOS-tinted switch: white thumb, green/gray track, no M3 decorations. */

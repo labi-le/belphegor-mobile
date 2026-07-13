@@ -13,7 +13,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.text.InputType
 import android.util.Log
-import android.view.ContextThemeWrapper
 import android.view.Gravity
 import android.view.MenuItem
 import android.view.View
@@ -37,8 +36,6 @@ import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
-import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textfield.TextInputLayout
 import org.json.JSONObject
 
 /**
@@ -93,6 +90,11 @@ class MainActivity : AppCompatActivity() {
     // coming up. Cleared by an explicit stop.
     private var startingUntil = 0L
     private var lastStarting = false
+
+    // Hairline under the toolbar, shown only while the active section is
+    // scrolled (the HIG "scroll edge" cue); scrollers registered per section.
+    private lateinit var toolbarEdge: View
+    private val scrollers = HashMap<Int, ScrollView>()
     private var suppressSwitch = false
 
     private val ui = Handler(Looper.getMainLooper())
@@ -134,9 +136,14 @@ class MainActivity : AppCompatActivity() {
                 true
             }
         }
+        toolbarEdge = View(this).apply {
+            setBackgroundColor(color(R.color.separator))
+            visibility = View.INVISIBLE
+        }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(toolbar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            addView(toolbarEdge, LinearLayout.LayoutParams(MATCH_PARENT, 1))
             addView(content, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
             addView(
                 View(this@MainActivity).apply { setBackgroundColor(color(R.color.separator)) },
@@ -144,15 +151,24 @@ class MainActivity : AppCompatActivity() {
             )
             addView(tabs, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         }
+        for ((id, sv) in scrollers) {
+            sv.setOnScrollChangeListener { _, _, y, _, _ ->
+                if (currentSection == id) toolbarEdge.visibility = if (y > 0) View.VISIBLE else View.INVISIBLE
+            }
+        }
         setContentView(root)
 
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
             toolbar.setPadding(0, bars.top, 0, 0)
+            // Enforced edge-to-edge on 35: give the content room to scroll
+            // fields above the keyboard (tabs sit behind the IME anyway).
+            content.setPadding(0, 0, 0, (ime.bottom - bars.bottom).coerceAtLeast(0))
             insets
         }
 
-        select(ID_DASH)
+        select(savedInstanceState?.getInt(KEY_SECTION) ?: ID_DASH)
         refreshStatus()
 
         if (prefs.autostart && !NodeState.running) startNode()
@@ -184,6 +200,8 @@ class MainActivity : AppCompatActivity() {
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
         }
         tabs.menu.findItem(id)?.isChecked = true
+        toolbarEdge.visibility =
+            if ((scrollers[id]?.scrollY ?: 0) > 0) View.VISIBLE else View.INVISIBLE
         // Only stream log updates while the Logs panel is on screen.
         LogStore.onChange = if (id == ID_LOGS) ({ renderLogs() }) else null
         if (id == ID_NODES) renderSavedPeers()
@@ -282,7 +300,7 @@ class MainActivity : AppCompatActivity() {
             addView(statusCard)
             addView(summaryCard)
         }
-        return scroll(body)
+        return scroll(body).also { scrollers[ID_DASH] = it }
     }
 
     private fun nodesSection(): View {
@@ -297,7 +315,7 @@ class MainActivity : AppCompatActivity() {
             addView(sectionLabel(getString(R.string.saved_peers)))
             addView(card { addView(savedBox) })
         }
-        return scroll(body)
+        return scroll(body).also { scrollers[ID_NODES] = it }
     }
 
     private fun settingsSection(): View {
@@ -361,7 +379,7 @@ class MainActivity : AppCompatActivity() {
         for (sw in arrayOf(useTcp, discover, autostart, verbose, checkUpdates)) {
             sw.setOnCheckedChangeListener { _, _ -> save() }
         }
-        return scroll(root)
+        return scroll(root).also { scrollers[ID_SETTINGS] = it }
     }
 
     private fun logsSection(): View {
@@ -372,31 +390,57 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(16), dp(12), dp(16), dp(16))
         }
         logScroll = ScrollView(this).apply { addView(logView) }
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(logScroll, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+        scrollers[ID_LOGS] = logScroll
+        return FrameLayout(this).apply {
+            addView(
+                capped(logScroll),
+                FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT, Gravity.CENTER_HORIZONTAL),
+            )
         }
     }
 
     private fun showAddNodeDialog() {
-        val til = TextInputLayout(
-            ContextThemeWrapper(this, com.google.android.material.R.style.Widget_Material3_TextInputLayout_OutlinedBox),
-            null,
-        ).apply { hint = getString(R.string.add_node_hint); placeholderText = getString(R.string.add_node_placeholder) }
-        val input = TextInputEditText(til.context).apply {
+        // App field grammar (DESIGN.md §4): borderless input on a rounded
+        // tertiary fill, error as a plain red footnote — no boxes, no
+        // floating labels.
+        val fieldBg = fieldSurface()
+        val input = EditText(this).apply {
+            hint = getString(R.string.add_node_placeholder)
+            textSize = 17f
+            isSingleLine = true
+            background = fieldBg
+            setTextColor(color(R.color.label))
+            setHintTextColor(color(R.color.label_tertiary))
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             imeOptions = EditorInfo.IME_ACTION_DONE
+            setPadding(dp(14), dp(12), dp(14), dp(12))
         }
-        til.addView(input)
+        val errorText = dimText().apply {
+            setTextColor(color(R.color.ios_red))
+            visibility = View.GONE
+            setPadding(dp(4), dp(6), 0, 0)
+        }
+        fun setError(msg: String?) {
+            if (msg == null) {
+                errorText.visibility = View.GONE
+                fieldBg.setStroke(0, 0)
+            } else {
+                errorText.text = msg
+                errorText.visibility = View.VISIBLE
+                fieldBg.setStroke(dp(1).coerceAtLeast(2), color(R.color.ios_red))
+            }
+        }
+        input.doAfterTextChanged { setError(null) }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val p = dp(24); setPadding(p, dp(8), p, 0)
-            addView(til)
+            addView(input, fullWidth())
+            addView(errorText, fullWidth())
         }
         // Build without an auto-dismissing positive button so an invalid address
         // shows an inline error and keeps the dialog open.
         val dialog = MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.add_node)
+            .setCustomTitle(dialogTitle(getString(R.string.add_node)))
             .setMessage(R.string.add_node_msg)
             .setView(content)
             .setPositiveButton(R.string.action_add, null)
@@ -406,7 +450,7 @@ class MainActivity : AppCompatActivity() {
         val saved = prefs.peerList().toSet()
         for ((name, addr) in discoveredPeers()) {
             if (addr in saved) continue
-            if (content.childCount == 1) {
+            if (content.childCount == 2) {
                 content.addView(sectionLabel(getString(R.string.add_node_discovered)).apply { setPadding(0, dp(16), 0, dp(7)) })
             }
             content.addView(tintedButton(peerLabel(name, addr)) { addPeer(addr); dialog.dismiss() }, fullWidth(dp(6)))
@@ -415,11 +459,10 @@ class MainActivity : AppCompatActivity() {
             dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
                 val addr = input.text.toString().trim()
                 if (isValidPeer(addr)) {
-                    til.error = null
                     addPeer(addr)
                     dialog.dismiss()
                 } else {
-                    til.error = getString(R.string.add_node_invalid)
+                    setError(getString(R.string.add_node_invalid))
                 }
             }
         }
@@ -526,7 +569,7 @@ class MainActivity : AppCompatActivity() {
             statusText.text = getString(if (starting) R.string.status_starting else R.string.status_stopped)
             setSwitch(starting)
             selfText.text = prefs.deviceName.ifBlank { Build.MODEL ?: "Android" }
-            metaText.text = getString(R.string.status_offline_hint)
+            metaText.text = if (starting) "" else getString(R.string.status_offline_hint)
             summaryText.text = getString(R.string.dash_placeholder)
             peersHeader.text = getString(R.string.peers_connected)
             peersBox.removeAllViews()
@@ -655,6 +698,11 @@ class MainActivity : AppCompatActivity() {
         ui.removeCallbacks(poll)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(KEY_SECTION, currentSection)
+    }
+
     private fun renderLogs() {
         if (!::logView.isInitialized) return
         val text = LogStore.snapshot()
@@ -713,7 +761,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showUpdateDialog(up: Updater.Update) {
         MaterialAlertDialogBuilder(this)
-            .setTitle(getString(R.string.update_available_title, up.version))
+            .setCustomTitle(dialogTitle(getString(R.string.update_available_title, up.version)))
             .setMessage(up.notes.ifBlank { getString(R.string.dash_placeholder) })
             .setPositiveButton(R.string.update_download) { _, _ -> downloadAndInstallUpdate(up) }
             .setNegativeButton(R.string.update_later, null)
@@ -721,6 +769,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private companion object {
+        const val KEY_SECTION = "section"
         const val ID_DASH = 1
         const val ID_NODES = 2
         const val ID_SETTINGS = 3
