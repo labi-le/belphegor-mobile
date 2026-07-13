@@ -3,12 +3,15 @@ package belphegor.app
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -32,6 +35,7 @@ class BelphegorService : Service() {
     private lateinit var bridge: ClipboardBridge
     @Volatile private var node: Node? = null
     private var multicastLock: WifiManager.MulticastLock? = null
+    private var screenReceiver: BroadcastReceiver? = null
     private val dialer: ExecutorService = Executors.newSingleThreadExecutor()
     private var watchdog: ScheduledExecutorService? = null
 
@@ -48,7 +52,7 @@ class BelphegorService : Service() {
             return START_STICKY
         }
         startAsForeground()
-        if (Prefs(this).discover) acquireMulticastLock()
+        if (Prefs(this).discover) enableDiscoveryLock()
         startNode()
         connectPeers()
         return START_STICKY
@@ -97,13 +101,49 @@ class BelphegorService : Service() {
         }
     }
 
-    private fun acquireMulticastLock() {
-        if (multicastLock != null) return
-        val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        multicastLock = wifi.createMulticastLock("belphegor").apply {
-            setReferenceCounted(false)
-            acquire()
+    /**
+     * LAN discovery must RECEIVE multicast, which needs a Wi-Fi MulticastLock.
+     * A held lock disables the chip's multicast filtering, so the CPU is woken
+     * for every multicast/broadcast frame on the network (mDNS, SSDP, ARP,
+     * other apps' discovery) for as long as it is held -- the dominant Wi-Fi
+     * battery cost of this service, and it is paid even with the screen off.
+     * Discovery only matters while the user is actually looking at the app to
+     * add a peer, so gate the lock on screen state: hold it while the screen is
+     * on, drop it when the screen goes off. Unicast QUIC/TCP sync to already-
+     * known peers does NOT need the lock, so background sync keeps working; only
+     * new-peer LAN discovery pauses while the screen is off.
+     */
+    private fun enableDiscoveryLock() {
+        if (multicastLock == null) {
+            val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            multicastLock = wifi.createMulticastLock("belphegor").apply { setReferenceCounted(false) }
         }
+        if (getSystemService(PowerManager::class.java)?.isInteractive != false) acquireMulticastLock()
+        if (screenReceiver == null) {
+            screenReceiver = object : BroadcastReceiver() {
+                override fun onReceive(c: Context?, intent: Intent?) {
+                    when (intent?.action) {
+                        Intent.ACTION_SCREEN_ON -> acquireMulticastLock()
+                        Intent.ACTION_SCREEN_OFF -> releaseMulticastLock()
+                    }
+                }
+            }
+            registerReceiver(
+                screenReceiver,
+                IntentFilter().apply {
+                    addAction(Intent.ACTION_SCREEN_ON)
+                    addAction(Intent.ACTION_SCREEN_OFF)
+                },
+            )
+        }
+    }
+
+    private fun acquireMulticastLock() {
+        multicastLock?.let { if (!it.isHeld) it.acquire() }
+    }
+
+    private fun releaseMulticastLock() {
+        multicastLock?.let { if (it.isHeld) it.release() }
     }
 
     private fun startAsForeground() {
@@ -155,7 +195,9 @@ class BelphegorService : Service() {
         runCatching { node?.stop() }
         node = null
         NodeState.node = null
-        multicastLock?.let { if (it.isHeld) it.release() }
+        screenReceiver?.let { runCatching { unregisterReceiver(it) } }
+        screenReceiver = null
+        releaseMulticastLock()
         multicastLock = null
         dialer.shutdownNow()
         watchdog?.shutdownNow()
@@ -171,6 +213,6 @@ class BelphegorService : Service() {
         private const val TAG = "BelphegorService"
         private const val CHANNEL = "clipboard-sync"
         private const val NOTIFICATION_ID = 1
-        private const val WATCHDOG_MS = 4_000L
+        private const val WATCHDOG_MS = 30_000L
     }
 }
