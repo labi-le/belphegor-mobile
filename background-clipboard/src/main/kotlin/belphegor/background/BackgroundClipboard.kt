@@ -1,5 +1,6 @@
 package belphegor.background
 
+import android.os.Binder
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -20,6 +21,9 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
  */
 class BackgroundClipboard : IXposedHookLoadPackage {
 
+    @Volatile
+    private var cachedAppId = INVALID
+
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
         if (lpparam.packageName != ANDROID) return
 
@@ -35,19 +39,43 @@ class BackgroundClipboard : IXposedHookLoadPackage {
         XposedBridge.log("belphegor-background: hooked $hooked clipboard guard method(s)")
     }
 
+    // Force-allow the clipboard guard ONLY when the REAL binder caller is the
+    // belphegor app (matched by appId). Matching on a String argument alone let
+    // ANY local app pass callingPackage="belphegor.app" and have system_server
+    // force-allow its own background clipboard access -- a device-wide privacy
+    // bypass. Fails closed: if belphegor's uid can't be resolved we never override.
     private val allowForTarget = object : XC_MethodHook() {
-        override fun afterHookedMethod(param: MethodHookParam) {
-            // Any String arg equal to our package => this call is on our behalf.
-            if (param.args.any { it == TARGET_PACKAGE }) {
+        override fun beforeHookedMethod(param: MethodHookParam) {
+            val appId = belphegorAppId()
+            if (appId != INVALID && Binder.getCallingUid() % PER_USER_RANGE == appId) {
                 param.result = true
             }
         }
+    }
+
+    /** belphegor's appId (uid within a user), resolved once from system_server. */
+    private fun belphegorAppId(): Int {
+        if (cachedAppId != INVALID) return cachedAppId
+        cachedAppId = try {
+            val at = XposedHelpers.callStaticMethod(
+                XposedHelpers.findClass("android.app.ActivityThread", null),
+                "currentActivityThread",
+            )
+            val ctx = XposedHelpers.callMethod(at, "getSystemContext") as android.content.Context
+            ctx.packageManager.getPackageUid(TARGET_PACKAGE, 0) % PER_USER_RANGE
+        } catch (t: Throwable) {
+            XposedBridge.log("belphegor-background: uid resolve failed: $t")
+            INVALID
+        }
+        return cachedAppId
     }
 
     private companion object {
         const val ANDROID = "android"
         const val CLIPBOARD_SERVICE = "com.android.server.clipboard.ClipboardService"
         const val TARGET_PACKAGE = "belphegor.app"
+        const val PER_USER_RANGE = 100000
+        const val INVALID = -1
         val GUARD_METHODS = arrayOf("clipboardAccessAllowed")
     }
 }
