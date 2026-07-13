@@ -192,8 +192,20 @@ class MainActivity : AppCompatActivity() {
         toolbar.menu.clear()
         when (id) {
             ID_NODES -> toolbar.menu.add(0, MENU_ADD, 0, R.string.add_node).apply {
-                icon = ContextCompat.getDrawable(this@MainActivity, R.drawable.ic_add)?.mutate()
-                    ?.also { it.setTint(color(R.color.accent)) }
+                // Filled-tonal chip (accent_container disc + accent glyph): a
+                // clear affordance on the black canvas, where a borderless
+                // glyph was easy to miss, and the tint comes from resources
+                // (no fragile runtime setTint over a black path).
+                actionView = MaterialButton(
+                    this@MainActivity,
+                    null,
+                    com.google.android.material.R.attr.materialIconButtonFilledTonalStyle,
+                ).apply {
+                    setIconResource(R.drawable.ic_add)
+                    iconTint = ColorStateList.valueOf(color(R.color.accent))
+                    contentDescription = getString(R.string.add_node)
+                    setOnClickListener { showAddNodeDialog() }
+                }
                 setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
             }
             ID_LOGS -> toolbar.menu.add(0, MENU_CLEAR, 0, R.string.action_clear)
