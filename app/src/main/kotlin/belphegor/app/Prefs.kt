@@ -64,7 +64,7 @@ class Prefs(context: Context) {
 
     /** LAN discovery scan interval, seconds. */
     var discoverDelay: Int
-        get() = sp.getInt(KEY_DISCOVER_DELAY, 30)
+        get() = sp.getInt(KEY_DISCOVER_DELAY, 60)
         set(v) = sp.edit().putInt(KEY_DISCOVER_DELAY, v).apply()
 
     /** Peer keep-alive interval, seconds. */

@@ -103,7 +103,7 @@
 
     <!-- network (added) -->
     <string name="set_discover_delay">Discovery interval (s)</string>
-    <string name="set_discover_delay_ex">30</string>
+    <string name="set_discover_delay_ex">60</string>
     <string name="set_keep_alive">Keep-alive (s)</string>
     <string name="set_keep_alive_ex">60</string>
     <string name="set_wifi_only">Wi-Fi only</string>

@@ -893,7 +893,7 @@ class MainActivity : AppCompatActivity() {
         prefs.verbose = verbose.isChecked
         prefs.autostart = autostart.isChecked
         prefs.checkUpdates = checkUpdates.isChecked
-        prefs.discoverDelay = discoverDelay.text.toString().trim().toIntOrNull() ?: 30
+        prefs.discoverDelay = discoverDelay.text.toString().trim().toIntOrNull() ?: 60
         prefs.keepAlive = keepAlive.text.toString().trim().toIntOrNull() ?: 60
         prefs.maxFileSizeMiB = maxFileSize.text.toString().trim().toIntOrNull() ?: 16
         prefs.maxClipboardFiles = maxClipboardFiles.text.toString().trim().toIntOrNull() ?: 15
