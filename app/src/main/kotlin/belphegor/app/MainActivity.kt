@@ -886,17 +886,17 @@ class MainActivity : AppCompatActivity() {
     private fun save() {
         prefs.secret = secret.text.toString().trim()
         prefs.deviceName = deviceName.text.toString().trim()
-        prefs.port = port.text.toString().trim().toIntOrNull() ?: 0
-        prefs.maxPeers = maxPeers.text.toString().trim().toIntOrNull() ?: 0
+        prefs.port = (port.text.toString().trim().toIntOrNull() ?: 0).coerceIn(0, 65535)
+        prefs.maxPeers = (maxPeers.text.toString().trim().toIntOrNull() ?: 0).coerceIn(0, 1024)
         prefs.transport = if (useTcp.isChecked) "tcp" else "quic"
         prefs.discover = discover.isChecked
         prefs.verbose = verbose.isChecked
         prefs.autostart = autostart.isChecked
         prefs.checkUpdates = checkUpdates.isChecked
-        prefs.discoverDelay = discoverDelay.text.toString().trim().toIntOrNull() ?: 60
-        prefs.keepAlive = keepAlive.text.toString().trim().toIntOrNull() ?: 60
-        prefs.maxFileSizeMiB = maxFileSize.text.toString().trim().toIntOrNull() ?: 16
-        prefs.maxClipboardFiles = maxClipboardFiles.text.toString().trim().toIntOrNull() ?: 15
+        prefs.discoverDelay = (discoverDelay.text.toString().trim().toIntOrNull() ?: 60).coerceAtLeast(1)
+        prefs.keepAlive = (keepAlive.text.toString().trim().toIntOrNull() ?: 60).coerceAtLeast(1)
+        prefs.maxFileSizeMiB = (maxFileSize.text.toString().trim().toIntOrNull() ?: 16).coerceIn(1, 256)
+        prefs.maxClipboardFiles = (maxClipboardFiles.text.toString().trim().toIntOrNull() ?: 15).coerceIn(1, 1024)
         prefs.allowFiles = allowFiles.isChecked
         prefs.sendEnabled = sendClip.isChecked
         prefs.receiveEnabled = receiveClip.isChecked
