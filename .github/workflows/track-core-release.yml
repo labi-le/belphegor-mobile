@@ -12,11 +12,11 @@ name: track-core-release
 # FORWARD -- a core release older than the current pin is ignored (never a
 # downgrade).
 #
-# REQUIRES a repo secret RELEASE_PAT: a token with Contents: read/write on this
-# repo. The default GITHUB_TOKEN cannot be used here, because a tag pushed with
-# it does NOT trigger another workflow (release.yml) -- GitHub's recursion
-# guard. Create a fine-grained PAT scoped to labi-le/belphegor-mobile
-# (Contents: Read and write) and add it as the RELEASE_PAT secret.
+# To ENABLE auto-release, add a repo secret RELEASE_PAT: a fine-grained PAT
+# scoped to labi-le/belphegor-mobile with Contents: read/write. The default
+# GITHUB_TOKEN cannot be used, because a tag pushed with it does NOT trigger
+# another workflow (release.yml) -- GitHub's recursion guard. Without the secret
+# this workflow simply skips (it does not fail).
 
 on:
   schedule:
@@ -39,14 +39,18 @@ jobs:
       RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
       CORE: labi-le/belphegor
     steps:
-      - name: Require RELEASE_PAT
+      - name: Check RELEASE_PAT
+        id: gate
         run: |
           if [ -z "${RELEASE_PAT}" ]; then
-            echo "::error::RELEASE_PAT secret is not set (see this workflow's header)."
-            exit 1
+            echo "::notice::RELEASE_PAT not set -- skipping auto-release. Add the secret to enable it."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - if: steps.gate.outputs.enabled == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
           fetch-depth: 0
@@ -54,6 +58,7 @@ jobs:
 
       - name: Detect a core release ahead of the submodule
         id: detect
+        if: steps.gate.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -83,7 +88,7 @@ jobs:
           fi
 
       - name: Bump submodule + app version and tag a release
-        if: steps.detect.outputs.act == 'true'
+        if: steps.gate.outputs.enabled == 'true' && steps.detect.outputs.act == 'true'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
