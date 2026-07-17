@@ -1,7 +1,8 @@
 name: release
 
-# On a `v*` tag: build the release variants of both APKs, sign them if a
-# keystore is configured, and attach them to a GitHub Release.
+# Build the release APKs, sign them if a keystore is configured, and publish a
+# GitHub Release. Runs on a `v*` tag push, or when called (workflow_call) by
+# track-core-release with an explicit ref + tag (so no PAT is needed).
 #
 #   * :app              -> R8-minified, resource-shrunk, ARM-only (~26 MB)
 #   * :background-clipboard -> the LSPosed/Xposed module
@@ -16,6 +17,16 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit/ref to build the release from."
+        type: string
+        required: true
+      tag:
+        description: "Tag to create and publish the release under (e.g. v0.1.3)."
+        type: string
+        required: true
   workflow_dispatch:
 
 permissions:
@@ -34,6 +45,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Verify the release tag matches the app versionName
         if: startsWith(github.ref, 'refs/tags/')
@@ -136,9 +148,11 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ inputs.ref || github.sha }}
           files: dist/*.apk
           generate_release_notes: true
           fail_on_unmatched_files: true

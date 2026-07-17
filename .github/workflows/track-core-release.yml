@@ -3,20 +3,15 @@ name: track-core-release
 # Watch the belphegor core (labi-le/belphegor) for a new GitHub release and,
 # when one lands that is *ahead* of the pinned ./belphegor submodule, cut a
 # matching belphegor-mobile release automatically:
-#   1. move the submodule to the core release commit,
-#   2. patch-bump the app version (versionName + versionCode),
-#   3. commit to main and push a v* tag.
-# The tag push triggers release.yml, which builds and publishes the APKs.
+#   1. move the submodule to the core release commit + patch-bump the app version,
+#   2. commit that to main (built-in GITHUB_TOKEN),
+#   3. call release.yml to build, sign and publish the APKs.
 #
-# The "ahead" check uses commit ancestry, so the submodule is only ever moved
-# FORWARD -- a core release older than the current pin is ignored (never a
-# downgrade).
+# The "ahead" check uses commit ancestry, so the submodule is only moved FORWARD
+# -- an older core release is ignored (never a downgrade).
 #
-# To ENABLE auto-release, add a repo secret RELEASE_PAT: a fine-grained PAT
-# scoped to labi-le/belphegor-mobile with Contents: read/write. The default
-# GITHUB_TOKEN cannot be used, because a tag pushed with it does NOT trigger
-# another workflow (release.yml) -- GitHub's recursion guard. Without the secret
-# this workflow simply skips (it does not fail).
+# No PAT is needed: the release is built by calling release.yml directly
+# (workflow_call), so nothing relies on a tag push triggering another workflow.
 
 on:
   schedule:
@@ -31,34 +26,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  track:
+  bump:
     if: github.repository == 'labi-le/belphegor-mobile'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      act: ${{ steps.detect.outputs.act }}
+      tag: ${{ steps.bump.outputs.tag }}
+      ref: ${{ steps.bump.outputs.ref }}
     env:
-      RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
       CORE: labi-le/belphegor
     steps:
-      - name: Check RELEASE_PAT
-        id: gate
-        run: |
-          if [ -z "${RELEASE_PAT}" ]; then
-            echo "::notice::RELEASE_PAT not set -- skipping auto-release. Add the secret to enable it."
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - if: steps.gate.outputs.enabled == 'true'
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_PAT }}
 
       - name: Detect a core release ahead of the submodule
         id: detect
-        if: steps.gate.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -87,8 +72,9 @@ jobs:
             echo "submodule is not behind ${core_tag}; nothing to do"
           fi
 
-      - name: Bump submodule + app version and tag a release
-        if: steps.gate.outputs.enabled == 'true' && steps.detect.outputs.act == 'true'
+      - name: Bump submodule + app version and commit
+        id: bump
+        if: steps.detect.outputs.act == 'true'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -108,11 +94,23 @@ jobs:
           sed -i -E "s/(versionCode = )[0-9]+/\1${new_vc}/" "$gradle"
           sed -i -E "s/(versionName = \")[0-9]+\.[0-9]+\.[0-9]+/\1${new_vn}/" "$gradle"
           git add "$gradle"
-          echo "version ${old_vn} (code ${old_vc}) -> ${new_vn} (code ${new_vc})"
 
-          # 3) commit to main + push a v* tag (the tag triggers release.yml)
+          # 3) commit the bump to main (GITHUB_TOKEN; no tag pushed)
           git commit -m "release: v${new_vn} — track core ${{ steps.detect.outputs.core_tag }}"
-          git tag -a "v${new_vn}" -m "belphegor-mobile v${new_vn} (core ${{ steps.detect.outputs.core_tag }})"
           git push origin HEAD:main
-          git push origin "v${new_vn}"
-          echo "::notice::published v${new_vn} tracking core ${{ steps.detect.outputs.core_tag }}"
+          {
+            echo "tag=v${new_vn}"
+            echo "ref=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::bumped to v${new_vn} (core ${{ steps.detect.outputs.core_tag }}); building release"
+
+  # Build + sign + publish the release from the bump commit. Calling release.yml
+  # runs it with the built-in GITHUB_TOKEN, so no PAT is required.
+  release:
+    needs: bump
+    if: needs.bump.outputs.act == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      ref: ${{ needs.bump.outputs.ref }}
+      tag: ${{ needs.bump.outputs.tag }}
+    secrets: inherit
