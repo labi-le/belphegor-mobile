@@ -15,9 +15,7 @@ jobs:
     if: ${{ github.actor == 'dependabot[bot]' && github.event_name == 'pull_request'}} # Detect that the PR author is dependabot
     steps:
       - name: Enable auto-merge for Dependabot PRs
-        # Auto-merge needs a public repo (or a paid plan for private ones); skip
-        # gracefully otherwise so Dependabot PRs just wait for a manual merge.
-        run: gh pr merge --auto --merge "$PR_URL" || echo "::notice::auto-merge unavailable — merge this PR manually or make the repo public"
+        run: gh pr merge --auto --merge "$PR_URL"
         env:
-          PR_URL: ${{github.event.pull_request.html_url}}
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
