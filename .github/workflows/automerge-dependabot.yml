@@ -1,8 +1,18 @@
 ---
 name: "Dependabot Automerge - Action"
 
+# Fires only after `build` has finished for a Dependabot pull request, so a red
+# build can no longer be merged. Enabling GitHub auto-merge from the pull_request
+# event instead merges within seconds: auto-merge waits for *required* status
+# checks, and this repository protects no branch, so there are none to wait for.
+# That is how AGP 9 landed on a failing build.
+#
+# workflow_run also runs in the base-repository context, which sidesteps the
+# read-only GITHUB_TOKEN that Dependabot-triggered events get.
 on:
-  pull_request:
+  workflow_run:
+    workflows: ["build"]
+    types: [completed]
 
 permissions:
   contents: write
@@ -12,10 +22,14 @@ jobs:
   auto-merge:
     name: DependabotMerge
     runs-on: ubuntu-latest
-    if: ${{ github.actor == 'dependabot[bot]' && github.event_name == 'pull_request'}} # Detect that the PR author is dependabot
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]'
     steps:
-      - name: Enable auto-merge for Dependabot PRs
-        run: gh pr merge --auto --merge "$PR_URL"
+      - name: Merge now that both APKs build
+        run: gh pr merge --merge "$HEAD_BRANCH"
         env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          GH_REPO: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
