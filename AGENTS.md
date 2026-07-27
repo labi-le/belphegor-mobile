@@ -31,7 +31,7 @@ LAN discovery: multicast (under Wi-Fi MulticastLock) -> node.discoveredJSON() ->
 **Load-bearing behaviors to respect:**
 - The core does **not** auto-redial dropped *outgoing* links; `BelphegorService`'s watchdog re-dials saved peers every 15 s (also on network change / app resume).
 - `NodeID` is host-supplied via `Config.nodeID` (Android SELinux denies the MAC lookup, so every phone would otherwise collide on id 1). `Prefs.nodeId` generates a stable random `2..1023` per install.
-- `wifiOnly` pause tears the node down (`NodeState.node = null`) while the service/notification stay up; the UI shows "Paused" via `NodeState.pausedForNetwork`.
+- Pausing tears the node down (`NodeState.node = null`) while the service/notification stay up; `NodeState.pause` carries the reason — `SCREEN` (screen off under `Prefs.pauseOnScreenOff`, **on by default**) or `NETWORK` (`wifiOnly` on mobile data) — and the UI shows "Paused". `ACTION_SCREEN_ON` only reaches runtime-registered receivers, so the FGS itself must stay up to see the wake-up; a parked service holds no node, sockets, timers or multicast lock.
 
 ## Key Directories
 
@@ -84,7 +84,7 @@ Release variants (CI signs them; see below):
   fun LinearLayout.fieldRow(label: String, example: String, value: String, numeric: Boolean = false): EditText
   ```
 - **UI rules are mandatory:** `DESIGN.md` is the source of truth for every color/size/pattern (Apple-HIG over Material; tokens in `res/values[-night]/colors.xml`, primitives in `Views.kt`). Settings **apply on change — no Save button**; state is never color-alone.
-- **Shared state = `object` singletons:** `NodeState` (`@Volatile var node` + `pausedForNetwork`), `LogStore` (500-line ring buffer), `Updater`. Read by UI without binding.
+- **Shared state = `object` singletons:** `NodeState` (`@Volatile var node` + `pause` reason + `peerCount()`), `LogStore` (500-line ring buffer), `Updater`. Read by UI without binding.
 - **Settings:** `Prefs` wraps one `SharedPreferences` file `"belphegor"`; each knob is a typed `var` backed by a `KEY_*` const; reads are live. A running node picks up changes only on its **next start**.
 - **Threading:** main `Handler` poll @ `POLL_MS=1500`; `Executors` single-thread `dialer` for blocking `connect()`; scheduled watchdog @ `WATCHDOG_MS=15000`; `ConnectivityManager.registerDefaultNetworkCallback`; raw `Thread{}` for APK/update IO.
 - **Error handling:** pervasive `runCatching { ... }.getOrNull()/onFailure`; `try/catch` only around `Mobile.start`. Per-class `Log` TAGs (`"BelphegorService"`, `"ClipboardBridge"`, `"Belphegor"`, `"belphegor-bg"`); core lines mirror to `LogStore.add("[app] …")`.

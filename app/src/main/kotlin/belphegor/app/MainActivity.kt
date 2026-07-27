@@ -70,7 +70,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sendClip: MaterialSwitch
     private lateinit var receiveClip: MaterialSwitch
     private lateinit var wifiOnly: MaterialSwitch
-    private lateinit var bgDiscovery: MaterialSwitch
+    private lateinit var screenPause: MaterialSwitch
     private lateinit var appearanceValue: TextView
     private lateinit var unlockBtn: TextView
     private lateinit var batteryBtn: TextView
@@ -418,7 +418,7 @@ class MainActivity : AppCompatActivity() {
             card {
                 autostart = switchRow(getString(R.string.set_autostart), getString(R.string.set_autostart_sub), prefs.autostart)
                 divider()
-                bgDiscovery = switchRow(getString(R.string.set_bg_discovery), getString(R.string.set_bg_discovery_sub), prefs.bgDiscovery)
+                screenPause = switchRow(getString(R.string.set_screen_pause), getString(R.string.set_screen_pause_sub), prefs.pauseOnScreenOff)
                 divider()
                 verbose = switchRow(getString(R.string.set_verbose), null, prefs.verbose)
             },
@@ -453,7 +453,7 @@ class MainActivity : AppCompatActivity() {
         for (field in arrayOf(deviceName, secret, port, maxPeers, discoverDelay, keepAlive, maxFileSize, maxClipboardFiles)) {
             field.doAfterTextChanged { save() }
         }
-        for (sw in arrayOf(useTcp, discover, wifiOnly, sendClip, receiveClip, allowFiles, autostart, bgDiscovery, verbose, checkUpdates)) {
+        for (sw in arrayOf(useTcp, discover, wifiOnly, sendClip, receiveClip, allowFiles, autostart, screenPause, verbose, checkUpdates)) {
             sw.setOnCheckedChangeListener { _, _ -> save() }
         }
         return scroll(root).also { scrollers[ID_SETTINGS] = it }
@@ -712,11 +712,15 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { addPeer(addr) }
         }
 
+    private fun pauseLabel(): String = getString(
+        if (NodeState.pause == NodeState.Pause.SCREEN) R.string.status_screen_wait else R.string.status_wifi_wait,
+    )
+
     private fun refreshStatus() {
         renderDiscovered()
         val json = NodeState.statusJson()
         val starting = json == null && SystemClock.uptimeMillis() < startingUntil
-        val paused = json == null && NodeState.pausedForNetwork
+        val paused = json == null && NodeState.pause != null
         // Skip identical ticks: an idle node re-emits the same snapshot, so there
         // is no need to re-marshal, re-parse, or rebuild any views.
         if (statusRendered && json == lastStatusJson && starting == lastStarting && paused == lastPaused) return
@@ -730,12 +734,18 @@ class MainActivity : AppCompatActivity() {
             statusText.text = getString(if (paused) R.string.status_paused else if (starting) R.string.status_starting else R.string.status_stopped)
             setSwitch(starting || paused)
             selfText.text = prefs.deviceName.ifBlank { Build.MODEL ?: "Android" }
-            metaText.text = if (paused) getString(R.string.status_wifi_wait) else if (starting) "" else getString(R.string.status_offline_hint)
+            metaText.text = if (paused) pauseLabel() else if (starting) "" else getString(R.string.status_offline_hint)
             summaryText.text = getString(R.string.dash_placeholder)
             peersHeader.text = getString(R.string.peers_connected)
             peersBox.removeAllViews()
             peersBox.addView(
-                emptyRow(getString(if (paused) R.string.status_wifi_wait else if (starting) R.string.status_starting else R.string.peers_service_off)),
+                emptyRow(
+                    when {
+                        paused -> pauseLabel()
+                        starting -> getString(R.string.status_starting)
+                        else -> getString(R.string.peers_service_off)
+                    },
+                ),
             )
             return
         }
@@ -821,7 +831,7 @@ class MainActivity : AppCompatActivity() {
     private fun stopNode() {
         stopService(Intent(this, BelphegorService::class.java))
         NodeState.node = null
-        NodeState.pausedForNetwork = false
+        NodeState.pause = null
         startingUntil = 0L
         refreshStatus()
     }
@@ -901,7 +911,7 @@ class MainActivity : AppCompatActivity() {
         prefs.sendEnabled = sendClip.isChecked
         prefs.receiveEnabled = receiveClip.isChecked
         prefs.wifiOnly = wifiOnly.isChecked
-        prefs.bgDiscovery = bgDiscovery.isChecked
+        prefs.pauseOnScreenOff = screenPause.isChecked
     }
 
     private fun refreshUnlockButton() {

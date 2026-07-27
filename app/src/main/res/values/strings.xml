@@ -124,8 +124,8 @@
     <string name="footer_clipboard">Send and receive apply immediately. File size and count take effect the next time sync starts.</string>
 
     <!-- behavior (added) -->
-    <string name="set_bg_discovery">Discover in background</string>
-    <string name="set_bg_discovery_sub">Keep finding peers with the screen off (more battery)</string>
+    <string name="set_screen_pause">Pause with the screen off</string>
+    <string name="set_screen_pause_sub">Stop syncing while the screen is off. Clipboard copied elsewhere meanwhile will not arrive.</string>
 
     <!-- peers -->
     <string name="sec_peers">PEERS</string>
@@ -138,4 +138,6 @@
     <string name="status_paused">Paused</string>
     <string name="status_wifi_wait">Waiting for Wi-Fi</string>
     <string name="notif_waiting_wifi">Paused - waiting for Wi-Fi</string>
+    <string name="status_screen_wait">Screen off</string>
+    <string name="notif_paused_screen">Paused - screen off</string>
 </resources>

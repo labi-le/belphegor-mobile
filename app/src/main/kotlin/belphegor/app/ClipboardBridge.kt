@@ -9,6 +9,8 @@ import androidx.core.content.FileProvider
 import belphegor.mobile.Handler
 import belphegor.mobile.Node
 import java.io.File
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * Two-way bridge between the Android clipboard and the belphegor core.
@@ -32,18 +34,38 @@ class ClipboardBridge(
     /** Read live so the Send/Receive toggles in Settings take effect at once. */
     private val prefs = Prefs(context)
 
+    /** Serialises outbound copies off the main thread; one at a time is plenty
+     *  for human-rate clipboard events and keeps their order intact. */
+    private val sender: ExecutorService = Executors.newSingleThreadExecutor()
+
     /** Sink for remote payloads. Registered with Mobile.start(cfg, handler). */
     val handler: Handler = Handler { mimeType, data -> if (prefs.receiveEnabled) writeLocal(mimeType, data) }
 
-    /** Fires on every local clipboard change; forwards it to the mesh. */
+    /**
+     * Fires on every local clipboard change. This runs on the main thread, so
+     * it only takes the clip descriptor and hands the rest to [sender].
+     */
     val listener = ClipboardManager.OnPrimaryClipChangedListener {
         if (!prefs.sendEnabled) return@OnPrimaryClipChangedListener
-        val n = node ?: return@OnPrimaryClipChangedListener
+        if (node == null) return@OnPrimaryClipChangedListener
         val clip = cm.primaryClip ?: return@OnPrimaryClipChangedListener
         if (clip.itemCount == 0) return@OnPrimaryClipChangedListener
 
         val mime = clip.description?.getMimeType(0) ?: ""
         val item = clip.getItemAt(0)
+        sender.execute { push(mime, item) }
+    }
+
+    /**
+     * With nobody connected the copy would be announced to no one -- the core
+     * only announces at copy time and never re-announces to a peer that shows
+     * up later -- so bail out before touching the payload, which for an image
+     * or a file means pulling the whole thing through the ContentResolver.
+     */
+    private fun push(mime: String, item: ClipData.Item) {
+        val n = node ?: return
+        if (NodeState.peerCount() == 0) return
+
         val bytes: ByteArray? = when {
             item.text != null -> item.text.toString().toByteArray(Charsets.UTF_8)
             item.uri != null -> runCatching {
@@ -85,6 +107,10 @@ class ClipboardBridge(
 
     fun register() = cm.addPrimaryClipChangedListener(listener)
     fun unregister() = cm.removePrimaryClipChangedListener(listener)
+
+    fun shutdown() {
+        sender.shutdownNow()
+    }
 
     private companion object {
         const val TAG = "ClipboardBridge"

@@ -87,10 +87,10 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_WIFI_ONLY, false)
         set(v) = sp.edit().putBoolean(KEY_WIFI_ONLY, v).apply()
 
-    /** Keep LAN discovery (multicast lock) alive with the screen off. */
-    var bgDiscovery: Boolean
-        get() = sp.getBoolean(KEY_BG_DISCOVERY, false)
-        set(v) = sp.edit().putBoolean(KEY_BG_DISCOVERY, v).apply()
+    /** Stop the node while the screen is off; it comes back when the screen wakes. */
+    var pauseOnScreenOff: Boolean
+        get() = sp.getBoolean(KEY_SCREEN_OFF_PAUSE, true)
+        set(v) = sp.edit().putBoolean(KEY_SCREEN_OFF_PAUSE, v).apply()
 
     /** UI theme: "system" (default), "light", or "dark". */
     var theme: String
@@ -143,7 +143,7 @@ class Prefs(context: Context) {
         const val KEY_SEND = "send_enabled"
         const val KEY_RECEIVE = "receive_enabled"
         const val KEY_WIFI_ONLY = "wifi_only"
-        const val KEY_BG_DISCOVERY = "bg_discovery"
+        const val KEY_SCREEN_OFF_PAUSE = "screen_off_pause"
         const val KEY_THEME = "theme"
     }
 }

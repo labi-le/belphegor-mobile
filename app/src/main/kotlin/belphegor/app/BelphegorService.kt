@@ -28,7 +28,6 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
-import org.json.JSONObject
 
 /**
  * Foreground service owning the belphegor QUIC node for the process lifetime.
@@ -60,7 +59,7 @@ class BelphegorService : Service() {
             return START_STICKY
         }
         startAsForeground()
-        if (Prefs(this).discover) enableDiscoveryLock()
+        registerScreenWatch()
         registerNetworkWatch()
         evaluateRun()
         return START_STICKY
@@ -91,6 +90,7 @@ class BelphegorService : Service() {
             bridge.node = n
             NodeState.node = n
             bridge.register()
+            if (prefs.discover) acquireMulticastLock()
             Log.i(TAG, "node started (transport=${prefs.transport}, discover=${prefs.discover})")
             LogStore.add("[app] node started, transport=${prefs.transport}")
             startWatchdog()
@@ -106,14 +106,8 @@ class BelphegorService : Service() {
         // re-dial dropped outgoing connections itself, and a duplicate dial
         // makes it close the healthy one as "stale". Safe to call repeatedly
         // (watchdog, network change, app resume) to recover a dropped link.
-        if (node == null || connectedPeerCount() > 0) return
+        if (node == null || NodeState.peerCount() > 0) return
         for (addr in Prefs(this).peerList()) connectPeer(addr)
-    }
-
-    private fun connectedPeerCount(): Int {
-        val n = node ?: return 0
-        val json = runCatching { n.statusJSON() }.getOrNull() ?: return 0
-        return runCatching { JSONObject(json).optJSONArray("peers")?.length() ?: 0 }.getOrElse { 0 }
     }
 
     private fun connectPeer(addr: String) {
@@ -126,50 +120,43 @@ class BelphegorService : Service() {
     }
 
     /**
+     * ACTION_SCREEN_ON/OFF reach runtime-registered receivers only -- a manifest
+     * component never sees them -- so the service itself has to stay up to
+     * notice the wake-up, even while its node is paused. A parked service holds
+     * no node, and therefore no sockets, timers or locks.
+     */
+    private fun registerScreenWatch() {
+        if (screenReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, intent: Intent?) = evaluateRun()
+        }
+        screenReceiver = receiver
+        registerReceiver(
+            receiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            },
+        )
+    }
+
+    /**
      * LAN discovery must RECEIVE multicast, which needs a Wi-Fi MulticastLock.
      * A held lock disables the chip's multicast filtering, so the CPU is woken
      * for every multicast/broadcast frame on the network (mDNS, SSDP, ARP,
      * other apps' discovery) for as long as it is held -- the dominant Wi-Fi
-     * battery cost of this service, and it is paid even with the screen off.
-     * Discovery only matters while the user is actually looking at the app to
-     * add a peer, so gate the lock on screen state: hold it while the screen is
-     * on, drop it when the screen goes off. Unicast QUIC/TCP sync to already-
-     * known peers does NOT need the lock, so background sync keeps working; only
-     * new-peer LAN discovery pauses while the screen is off.
+     * battery cost of this service. It is therefore tied to the node's own
+     * lifetime: no node (screen off, or waiting for Wi-Fi) means no lock.
+     * Unicast QUIC/TCP sync to known peers never needs it.
      */
-    private fun enableDiscoveryLock() {
-        if (multicastLock == null) {
-            val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            multicastLock = wifi.createMulticastLock("belphegor").apply { setReferenceCounted(false) }
-        }
-        if (Prefs(this).bgDiscovery) {
-            // Hold the lock for the whole service lifetime: LAN discovery keeps
-            // working with the screen off (extra battery, opt-in).
-            acquireMulticastLock()
-            return
-        }
-        if (getSystemService(PowerManager::class.java)?.isInteractive != false) acquireMulticastLock()
-        if (screenReceiver == null) {
-            screenReceiver = object : BroadcastReceiver() {
-                override fun onReceive(c: Context?, intent: Intent?) {
-                    when (intent?.action) {
-                        Intent.ACTION_SCREEN_ON -> acquireMulticastLock()
-                        Intent.ACTION_SCREEN_OFF -> releaseMulticastLock()
-                    }
-                }
-            }
-            registerReceiver(
-                screenReceiver,
-                IntentFilter().apply {
-                    addAction(Intent.ACTION_SCREEN_ON)
-                    addAction(Intent.ACTION_SCREEN_OFF)
-                },
-            )
-        }
-    }
-
     private fun acquireMulticastLock() {
-        multicastLock?.let { if (!it.isHeld) it.acquire() }
+        val lock = multicastLock ?: run {
+            val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            wifi.createMulticastLock("belphegor")
+                .apply { setReferenceCounted(false) }
+                .also { multicastLock = it }
+        }
+        if (!lock.isHeld) lock.acquire()
     }
 
     private fun releaseMulticastLock() {
@@ -228,28 +215,45 @@ class BelphegorService : Service() {
     }
 
     /**
-     * Runs or pauses the node per the Wi-Fi-only policy. Called on start and on
-     * every default-network change; when paused the FGS stays alive so sync
-     * resumes automatically once an allowed network returns.
+     * Runs or pauses the node per the screen and Wi-Fi-only policies. Called on
+     * start, on screen on/off and on every default-network change; a paused node
+     * keeps the FGS alive so sync resumes by itself once the reason clears.
      */
     private fun evaluateRun() {
-        val allowed = !Prefs(this).wifiOnly || onAllowedNetwork()
-        if (allowed) {
-            NodeState.pausedForNetwork = false
-            if (node == null) startNode()
-            connectPeers()
-            updateNotification(getString(R.string.notif_text))
-        } else {
-            if (node != null) {
-                runCatching { node?.stop() }
-                node = null
-                bridge.node = null
-                NodeState.node = null
+        val prefs = Prefs(this)
+        val asleep = prefs.pauseOnScreenOff &&
+            getSystemService(PowerManager::class.java)?.isInteractive == false
+        when {
+            asleep -> pauseNode(NodeState.Pause.SCREEN, R.string.notif_paused_screen, "screen off")
+            prefs.wifiOnly && !onAllowedNetwork() ->
+                pauseNode(NodeState.Pause.NETWORK, R.string.notif_waiting_wifi, "Wi-Fi only, waiting for Wi-Fi")
+            else -> {
+                NodeState.pause = null
+                if (node == null) startNode()
+                connectPeers()
+                updateNotification(getString(R.string.notif_text))
             }
-            NodeState.pausedForNetwork = true
-            updateNotification(getString(R.string.notif_waiting_wifi))
-            LogStore.add("[app] paused: Wi-Fi only, waiting for Wi-Fi")
         }
+    }
+
+    private fun pauseNode(reason: NodeState.Pause, textRes: Int, why: String) {
+        if (NodeState.pause == reason && node == null) return
+        stopNode()
+        NodeState.pause = reason
+        updateNotification(getString(textRes))
+        LogStore.add("[app] paused: $why")
+    }
+
+    /** Drops the node and everything it costs, leaving the FGS parked. */
+    private fun stopNode() {
+        watchdog?.shutdownNow()
+        watchdog = null
+        releaseMulticastLock()
+        runCatching { bridge.unregister() }
+        bridge.node = null
+        node?.let { runCatching { it.stop() } }
+        node = null
+        NodeState.node = null
     }
 
     /**
@@ -278,20 +282,15 @@ class BelphegorService : Service() {
     }
 
     override fun onDestroy() {
-        runCatching { bridge.unregister() }
-        runCatching { node?.stop() }
-        node = null
-        NodeState.node = null
-        NodeState.pausedForNetwork = false
+        stopNode()
+        bridge.shutdown()
+        NodeState.pause = null
         connectivityCallback?.let { cb -> runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) } }
         connectivityCallback = null
         screenReceiver?.let { runCatching { unregisterReceiver(it) } }
         screenReceiver = null
-        releaseMulticastLock()
         multicastLock = null
         dialer.shutdownNow()
-        watchdog?.shutdownNow()
-        watchdog = null
         super.onDestroy()
     }
 
