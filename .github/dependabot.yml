@@ -10,10 +10,13 @@ updates:
       # AGP 9 requires build-tools 36, but the pinned read-only nix SDK supplies
       # 35 (shell.nix). A major bump therefore breaks every build until that
       # migration happens deliberately, together with CI and compile/targetSdk.
+      # Minors are fine: the wrapper tracks the nix gradle, which stays ahead of
+      # what AGP 8.x asks for.
       - dependency-name: "com.android.application"
         update-types: ["version-update:semver-major"]
       - dependency-name: "com.android.library"
         update-types: ["version-update:semver-major"]
-      # Gradle 9 only pairs with AGP 9.
-      - dependency-name: "gradle"
+      # Gradle 9 only pairs with AGP 9. The dependency is named gradle-wrapper,
+      # not gradle -- an "ignore" on the wrong name silently does nothing.
+      - dependency-name: "gradle-wrapper"
         update-types: ["version-update:semver-major"]

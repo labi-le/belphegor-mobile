@@ -71,7 +71,7 @@ Release variants (CI signs them; see below):
 ```
 
 - `build-aar.sh` auto-invokes `setup-core.sh` — no separate overlay step.
-- `apk.sh` uses the nix-provided `gradle` (`--no-daemon`), app module only; README/CI use `./gradlew` (Gradle 8.9). Both are valid.
+- `apk.sh` uses the nix-provided `gradle` (`--no-daemon`), app module only; README/CI use `./gradlew`. Both run Gradle 8.14.4 — the wrapper deliberately matches what `shell.nix` supplies.
 - **Install is manual sideloading** — there is no adb script in the repo. Debug output: `app/build/outputs/apk/debug/app-debug.apk`. Conventional (not in repo): `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Code Conventions & Common Patterns
@@ -106,7 +106,7 @@ Release variants (CI signs them; see below):
 ## Runtime/Tooling Preferences
 
 - **Use the repo-root `nix-shell` (`shell.nix`) — it is the canonical toolchain.** Do not confuse it with `belphegor/shell.nix` (upstream, Go+protobuf only).
-- Pinned versions (authoritative in `shell.nix` + `.github/workflows/build.yml`): **Go 1.26** (`GOTOOLCHAIN=local`), **gomobile / `golang.org/x/mobile` `v0.0.0-20241213221354-a87c1cf6cf46`** (version skew crashes the generated binding at init), **NDK 26.1.10909125**, **SDK platform 35 / build-tools 35.0.0**, **JDK 17**, **Gradle 8.9** wrapper, min API 26.
+- Pinned versions (authoritative in `shell.nix` + `.github/workflows/build.yml`): **Go 1.26** (`GOTOOLCHAIN=local`), **gomobile / `golang.org/x/mobile` `v0.0.0-20241213221354-a87c1cf6cf46`** (version skew crashes the generated binding at init), **NDK 26.1.10909125**, **SDK platform 35 / build-tools 35.0.0**, **JDK 17**, **AGP 8.13.2** with the **Gradle 8.14.4** wrapper (AGP 8.13 needs Gradle ≥ 8.13; Kotlin 2.5 will need ≥ 8.14.4), min API 26.
 - **Submodule/glue overlay:** `setup-core.sh` does `cp -a glue/. belphegor/` (mapping `glue/mobile/*` → `belphegor/mobile/*`, `glue/internal/node/mobile.go` → core) because Go forbids importing another module's `internal/*`. These land as **untracked** files; `.gitmodules` `ignore=dirty` masks them — **do not remove `ignore=dirty`**, and never commit the `belphegor` gitlink bump casually (it is managed by `track-core-release.yml`). Expect `setup-core.sh` to mutate the submodule's `go.mod`/`go.sum` + `go.work.sum` after a build.
 - **No Gradle version catalog** — deps are direct literals in the module `build.gradle.kts`: `androidx.core:core-ktx:1.13.1`, `androidx.appcompat:appcompat:1.7.1`, `com.google.android.material:material:1.14.0`, and `de.robv.android.xposed:api:82` (`compileOnly`).
 - **Signing lives in CI only** (`release.yml`, `apksigner` + `KEYSTORE_*` secrets); no `signingConfigs` in Gradle. Unsigned builds ship as `*-unsigned.apk`. `versionCode`/`versionName` in `app/build.gradle.kts` are auto patch-bumped by `track-core-release.yml`; `v*` tags trigger `release.yml`.
