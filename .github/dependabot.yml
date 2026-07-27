@@ -16,7 +16,9 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "com.android.library"
         update-types: ["version-update:semver-major"]
-      # Gradle 9 only pairs with AGP 9. The dependency is named gradle-wrapper,
-      # not gradle -- an "ignore" on the wrong name silently does nothing.
+      # The wrapper is not an independent dependency: it mirrors the gradle that
+      # shell.nix supplies, so `apk.sh` and `./gradlew` stay on one version. It
+      # moves when nixpkgs moves, not on dependabot's schedule -- and gradle 9
+      # would additionally require AGP 9. (The dependency is named
+      # gradle-wrapper; an "ignore" on `gradle` silently matches nothing.)
       - dependency-name: "gradle-wrapper"
-        update-types: ["version-update:semver-major"]
