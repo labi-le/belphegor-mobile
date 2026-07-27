@@ -71,7 +71,7 @@ Release variants (CI signs them; see below):
 ```
 
 - `build-aar.sh` auto-invokes `setup-core.sh` — no separate overlay step.
-- `apk.sh` uses the nix-provided `gradle` (`--no-daemon`), app module only; README/CI use `./gradlew`. Both run Gradle 8.14.4 — the wrapper deliberately matches what `shell.nix` supplies.
+- `apk.sh` uses the nix-provided `gradle` (`--no-daemon`), app module only; README/CI use `./gradlew`. Both must run the same Gradle: the wrapper mirrors what `shell.nix` supplies (8.14.4 today), and `apk.sh` aborts with `GRADLE_MISMATCH` if nixpkgs drifts away from it. Bump the wrapper to follow nixpkgs, never the other way round.
 - **Install is manual sideloading** — there is no adb script in the repo. Debug output: `app/build/outputs/apk/debug/app-debug.apk`. Conventional (not in repo): `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Code Conventions & Common Patterns
