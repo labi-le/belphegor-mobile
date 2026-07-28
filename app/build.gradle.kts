@@ -7,6 +7,10 @@ android {
     namespace = "belphegor.app"
     compileSdk = 35
     buildToolsVersion = "35.0.0" // pin to what the nix (read-only) SDK provides
+    // Must be pinned too: AGP falls back to its own default NDK (27.x as of
+    // 8.13), which the nix SDK does not ship, and then silently skips stripping
+    // libgojni.so -- that alone added ~10 MB to the release APK.
+    ndkVersion = "26.1.10909125"
 
     defaultConfig {
         applicationId = "belphegor.app"
