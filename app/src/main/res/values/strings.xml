@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">Belphegor</string>
     <string name="channel_name">Clipboard sync</string>
+    <string name="channel_name_hidden">Clipboard sync (hidden)</string>
     <string name="notif_text">Clipboard sync running</string>
 
     <!-- sections -->
@@ -126,6 +127,8 @@
     <!-- behavior (added) -->
     <string name="set_screen_pause">Pause with the screen off</string>
     <string name="set_screen_pause_sub">Stop syncing while the screen is off. Clipboard copied elsewhere meanwhile will not arrive.</string>
+    <string name="set_hide_notif">Hide the notification</string>
+    <string name="set_hide_notif_sub">Syncing keeps running. Android 13 and newer still list the app in the Task Manager.</string>
 
     <!-- peers -->
     <string name="sec_peers">PEERS</string>

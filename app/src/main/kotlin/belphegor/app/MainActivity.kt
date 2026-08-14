@@ -71,6 +71,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var receiveClip: MaterialSwitch
     private lateinit var wifiOnly: MaterialSwitch
     private lateinit var screenPause: MaterialSwitch
+    private lateinit var hideNotif: MaterialSwitch
     private lateinit var appearanceValue: TextView
     private lateinit var unlockBtn: TextView
     private lateinit var batteryBtn: TextView
@@ -420,6 +421,8 @@ class MainActivity : AppCompatActivity() {
                 divider()
                 screenPause = switchRow(getString(R.string.set_screen_pause), getString(R.string.set_screen_pause_sub), prefs.pauseOnScreenOff)
                 divider()
+                hideNotif = switchRow(getString(R.string.set_hide_notif), getString(R.string.set_hide_notif_sub), prefs.hideNotification)
+                divider()
                 verbose = switchRow(getString(R.string.set_verbose), null, prefs.verbose)
             },
         )
@@ -455,6 +458,14 @@ class MainActivity : AppCompatActivity() {
         }
         for (sw in arrayOf(useTcp, discover, wifiOnly, sendClip, receiveClip, allowFiles, autostart, screenPause, verbose, checkUpdates)) {
             sw.setOnCheckedChangeListener { _, _ -> save() }
+        }
+        hideNotif.setOnCheckedChangeListener { _, _ ->
+            save()
+            // The pref alone changes nothing: only the service can move the live
+            // notification to the other channel, and a blocked one is never redrawn.
+            if (NodeState.node != null || NodeState.pause != null) {
+                launchService(Intent(this, BelphegorService::class.java).setAction(BelphegorService.ACTION_NOTIFICATION))
+            }
         }
         return scroll(root).also { scrollers[ID_SETTINGS] = it }
     }
@@ -837,7 +848,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun launchService(intent: Intent) {
-        if (intent.action == BelphegorService.ACTION_CONNECT) {
+        // Actions only address an already-foreground service; the plain start
+        // intent is the one that has to bring it up.
+        if (intent.action != null) {
             super.startService(intent)
         } else {
             ContextCompat.startForegroundService(this, intent)
@@ -912,6 +925,7 @@ class MainActivity : AppCompatActivity() {
         prefs.receiveEnabled = receiveClip.isChecked
         prefs.wifiOnly = wifiOnly.isChecked
         prefs.pauseOnScreenOff = screenPause.isChecked
+        prefs.hideNotification = hideNotif.isChecked
     }
 
     private fun refreshUnlockButton() {

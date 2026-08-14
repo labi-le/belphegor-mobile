@@ -53,10 +53,18 @@ class BelphegorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_CONNECT) {
-            val addr = intent.getStringExtra(EXTRA_ADDR)
-            if (addr != null) connectPeer(addr) else connectPeers()
-            return START_STICKY
+        when (intent?.action) {
+            ACTION_CONNECT -> {
+                val addr = intent.getStringExtra(EXTRA_ADDR)
+                if (addr != null) connectPeer(addr) else connectPeers()
+                return START_STICKY
+            }
+            // A live service re-posts on the other channel; a dead one is never
+            // promoted to foreground.
+            ACTION_NOTIFICATION -> {
+                refreshNotification()
+                return START_STICKY
+            }
         }
         startAsForeground()
         registerScreenWatch()
@@ -163,11 +171,24 @@ class BelphegorService : Service() {
         multicastLock?.let { if (it.isHeld) it.release() }
     }
 
+    /**
+     * Created on demand, never both up front: a channel's importance is fixed at
+     * creation, and an unused blocked channel is one tap away from being locked
+     * to visible, after which the app can never lower it again.
+     */
+    private fun channelFor(hidden: Boolean): String {
+        val nm = getSystemService(NotificationManager::class.java)
+        val channel = if (hidden) {
+            NotificationChannel(CHANNEL_HIDDEN, getString(R.string.channel_name_hidden), NotificationManager.IMPORTANCE_NONE)
+        } else {
+            NotificationChannel(CHANNEL, getString(R.string.channel_name), NotificationManager.IMPORTANCE_LOW)
+        }
+        nm.createNotificationChannel(channel)
+        return channel.id
+    }
+
     private fun startAsForeground() {
-        getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL, getString(R.string.channel_name), NotificationManager.IMPORTANCE_LOW),
-        )
-        val notification = buildNotification(getString(R.string.notif_text))
+        val notification = buildNotification(statusText())
         val type = when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
@@ -178,14 +199,44 @@ class BelphegorService : Service() {
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
     }
 
-    private fun buildNotification(text: String): android.app.Notification =
-        NotificationCompat.Builder(this, CHANNEL)
+    private fun refreshNotification() {
+        runCatching {
+            // The re-post to the blocked channel is dropped and an app cannot
+            // cancel its own FGS notification, so an already visible one has to
+            // be removed first. The poke only arrives while the activity is
+            // visible, so the API 31+ background-FGS-start limit does not apply.
+            if (Prefs(this).hideNotification) {
+                ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            }
+            startAsForeground()
+        }.onFailure {
+            Log.w(TAG, "failed to refresh notification", it)
+            LogStore.add("[app] failed to refresh notification: ${it.message}")
+        }
+    }
+
+    /** Notification text for the current run/pause state. */
+    private fun statusText(): String = getString(
+        when (NodeState.pause) {
+            NodeState.Pause.SCREEN -> R.string.notif_paused_screen
+            NodeState.Pause.NETWORK -> R.string.notif_waiting_wifi
+            null -> R.string.notif_text
+        },
+    )
+
+    // Hidden posts to a channel the app blocks itself: the system drops the
+    // notification while the service keeps its foreground state (see DESIGN.md).
+    private fun buildNotification(text: String): android.app.Notification {
+        val hidden = Prefs(this).hideNotification
+        return NotificationCompat.Builder(this, channelFor(hidden))
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_stat_sync)
             .setColor(getColor(R.color.accent))
             .setOngoing(true)
+            .setVisibility(if (hidden) NotificationCompat.VISIBILITY_SECRET else NotificationCompat.VISIBILITY_PRIVATE)
             .build()
+    }
 
     private fun updateNotification(text: String) {
         getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, buildNotification(text))
@@ -221,23 +272,23 @@ class BelphegorService : Service() {
         val asleep = prefs.pauseOnScreenOff &&
             getSystemService(PowerManager::class.java)?.isInteractive == false
         when {
-            asleep -> pauseNode(NodeState.Pause.SCREEN, R.string.notif_paused_screen, "screen off")
+            asleep -> pauseNode(NodeState.Pause.SCREEN, "screen off")
             prefs.wifiOnly && !onAllowedNetwork() ->
-                pauseNode(NodeState.Pause.NETWORK, R.string.notif_waiting_wifi, "Wi-Fi only, waiting for Wi-Fi")
+                pauseNode(NodeState.Pause.NETWORK, "Wi-Fi only, waiting for Wi-Fi")
             else -> {
                 NodeState.pause = null
                 if (node == null) startNode()
                 connectPeers()
-                updateNotification(getString(R.string.notif_text))
+                updateNotification(statusText())
             }
         }
     }
 
-    private fun pauseNode(reason: NodeState.Pause, textRes: Int, why: String) {
+    private fun pauseNode(reason: NodeState.Pause, why: String) {
         if (NodeState.pause == reason && node == null) return
         stopNode()
         NodeState.pause = reason
-        updateNotification(getString(textRes))
+        updateNotification(statusText())
         LogStore.add("[app] paused: $why")
     }
 
@@ -295,9 +346,11 @@ class BelphegorService : Service() {
 
     companion object {
         const val ACTION_CONNECT = "belphegor.app.action.CONNECT"
+        const val ACTION_NOTIFICATION = "belphegor.app.action.NOTIFICATION"
         const val EXTRA_ADDR = "belphegor.app.extra.ADDR"
         private const val TAG = "BelphegorService"
         private const val CHANNEL = "clipboard-sync"
+        private const val CHANNEL_HIDDEN = "clipboard-sync-hidden"
         private const val NOTIFICATION_ID = 1
         private const val WATCHDOG_MS = 15_000L
     }
