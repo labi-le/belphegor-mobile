@@ -71,6 +71,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var receiveClip: MaterialSwitch
     private lateinit var wifiOnly: MaterialSwitch
     private lateinit var screenPause: MaterialSwitch
+    private lateinit var resumeUnlock: MaterialSwitch
     private lateinit var hideNotif: MaterialSwitch
     private lateinit var appearanceValue: TextView
     private lateinit var unlockBtn: TextView
@@ -106,7 +107,7 @@ class MainActivity : AppCompatActivity() {
     // coming up. Cleared by an explicit stop.
     private var startingUntil = 0L
     private var lastStarting = false
-    private var lastPaused = false
+    private var lastPause: NodeState.Pause? = null
 
     // Signature of the last rendered LAN-discovered list (Nodes tab): an
     // unchanged discovery result skips the view rebuild, like the status poll.
@@ -421,6 +422,10 @@ class MainActivity : AppCompatActivity() {
                 divider()
                 screenPause = switchRow(getString(R.string.set_screen_pause), getString(R.string.set_screen_pause_sub), prefs.pauseOnScreenOff)
                 divider()
+                resumeUnlock = switchRow(getString(R.string.set_resume_on_unlock), getString(R.string.set_resume_on_unlock_sub), prefs.resumeOnUnlock)
+                // Meaningless while the node never goes down for the screen.
+                resumeUnlock.isEnabled = prefs.pauseOnScreenOff
+                divider()
                 hideNotif = switchRow(getString(R.string.set_hide_notif), getString(R.string.set_hide_notif_sub), prefs.hideNotification)
                 divider()
                 verbose = switchRow(getString(R.string.set_verbose), null, prefs.verbose)
@@ -456,7 +461,7 @@ class MainActivity : AppCompatActivity() {
         for (field in arrayOf(deviceName, secret, port, maxPeers, discoverDelay, keepAlive, maxFileSize, maxClipboardFiles)) {
             field.doAfterTextChanged { save() }
         }
-        for (sw in arrayOf(useTcp, discover, wifiOnly, sendClip, receiveClip, allowFiles, autostart, screenPause, verbose, checkUpdates)) {
+        for (sw in arrayOf(useTcp, discover, wifiOnly, sendClip, receiveClip, allowFiles, autostart, verbose, checkUpdates)) {
             sw.setOnCheckedChangeListener { _, _ -> save() }
         }
         hideNotif.setOnCheckedChangeListener { _, _ ->
@@ -466,6 +471,17 @@ class MainActivity : AppCompatActivity() {
             if (NodeState.node != null || NodeState.pause != null) {
                 launchService(Intent(this, BelphegorService::class.java).setAction(BelphegorService.ACTION_NOTIFICATION))
             }
+        }
+        screenPause.setOnCheckedChangeListener { _, _ ->
+            // Both prefs decide whether a bare screen-on may start the node, so
+            // the live service has to re-read them now.
+            resumeUnlock.isEnabled = screenPause.isChecked
+            save()
+            if (NodeState.running) reevaluateService()
+        }
+        resumeUnlock.setOnCheckedChangeListener { _, _ ->
+            save()
+            if (NodeState.running) reevaluateService()
         }
         return scroll(root).also { scrollers[ID_SETTINGS] = it }
     }
@@ -723,36 +739,41 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { addPeer(addr) }
         }
 
-    private fun pauseLabel(): String = getString(
-        if (NodeState.pause == NodeState.Pause.SCREEN) R.string.status_screen_wait else R.string.status_wifi_wait,
+    private fun pauseLabel(pause: NodeState.Pause): String = getString(
+        when (pause) {
+            NodeState.Pause.SCREEN -> R.string.status_screen_wait
+            NodeState.Pause.NETWORK -> R.string.status_wifi_wait
+            NodeState.Pause.UNLOCK -> R.string.status_unlock_wait
+        },
     )
 
     private fun refreshStatus() {
         renderDiscovered()
         val json = NodeState.statusJson()
         val starting = json == null && SystemClock.uptimeMillis() < startingUntil
-        val paused = json == null && NodeState.pause != null
+        val pause = NodeState.pause
+        val paused = json == null && pause != null
         // Skip identical ticks: an idle node re-emits the same snapshot, so there
         // is no need to re-marshal, re-parse, or rebuild any views.
-        if (statusRendered && json == lastStatusJson && starting == lastStarting && paused == lastPaused) return
+        if (statusRendered && json == lastStatusJson && starting == lastStarting && pause == lastPause) return
         statusRendered = true
         lastStatusJson = json
         lastStarting = starting
-        lastPaused = paused
+        lastPause = pause
 
         if (json == null) {
             statusDot.background = oval(color(if (paused || starting) R.color.ios_orange else R.color.ios_gray))
             statusText.text = getString(if (paused) R.string.status_paused else if (starting) R.string.status_starting else R.string.status_stopped)
             setSwitch(starting || paused)
             selfText.text = prefs.deviceName.ifBlank { Build.MODEL ?: "Android" }
-            metaText.text = if (paused) pauseLabel() else if (starting) "" else getString(R.string.status_offline_hint)
+            metaText.text = if (pause != null) pauseLabel(pause) else if (starting) "" else getString(R.string.status_offline_hint)
             summaryText.text = getString(R.string.dash_placeholder)
             peersHeader.text = getString(R.string.peers_connected)
             peersBox.removeAllViews()
             peersBox.addView(
                 emptyRow(
                     when {
-                        paused -> pauseLabel()
+                        pause != null -> pauseLabel(pause)
                         starting -> getString(R.string.status_starting)
                         else -> getString(R.string.peers_service_off)
                     },
@@ -848,13 +869,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun launchService(intent: Intent) {
-        // Actions only address an already-foreground service; the plain start
-        // intent is the one that has to bring it up.
+        // Callers guard their action pokes with NodeState.running, so an action
+        // never brings the service up; only the plain start intent does.
         if (intent.action != null) {
             super.startService(intent)
         } else {
             ContextCompat.startForegroundService(this, intent)
         }
+    }
+
+    private fun reevaluateService() {
+        launchService(Intent(this, BelphegorService::class.java).setAction(BelphegorService.ACTION_REEVALUATE))
     }
 
     private fun ensureNotificationPermission() {
@@ -925,6 +950,7 @@ class MainActivity : AppCompatActivity() {
         prefs.receiveEnabled = receiveClip.isChecked
         prefs.wifiOnly = wifiOnly.isChecked
         prefs.pauseOnScreenOff = screenPause.isChecked
+        prefs.resumeOnUnlock = resumeUnlock.isChecked
         prefs.hideNotification = hideNotif.isChecked
     }
 

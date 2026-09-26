@@ -31,7 +31,7 @@ LAN discovery: multicast (under Wi-Fi MulticastLock) -> node.discoveredJSON() ->
 **Load-bearing behaviors to respect:**
 - The core does **not** auto-redial dropped *outgoing* links; `BelphegorService`'s watchdog re-dials saved peers every 15 s (also on network change / app resume).
 - `NodeID` is host-supplied via `Config.nodeID` (Android SELinux denies the MAC lookup, so every phone would otherwise collide on id 1). `Prefs.nodeId` generates a stable random `2..1023` per install.
-- Pausing tears the node down (`NodeState.node = null`) while the service/notification stay up; `NodeState.pause` carries the reason — `SCREEN` (screen off under `Prefs.pauseOnScreenOff`, **on by default**) or `NETWORK` (`wifiOnly` on mobile data) — and the UI shows "Paused". `ACTION_SCREEN_ON` only reaches runtime-registered receivers, so the FGS itself must stay up to see the wake-up; a parked service holds no node, sockets, timers or multicast lock.
+- Pausing tears the node down (`NodeState.node = null`) while the service/notification stay up; `NodeState.pause` carries the reason — `SCREEN` (screen off under `Prefs.pauseOnScreenOff`, **on by default**), `NETWORK` (`wifiOnly` on mobile data) or `UNLOCK` (screen on but keyguard still up, under `Prefs.resumeOnUnlock`, **on by default** and only consulted while the screen pause is on) — and the UI shows "Paused". `ACTION_SCREEN_ON` only reaches runtime-registered receivers, so the FGS itself must stay up to see the wake-up; a parked service holds no node, sockets, timers or multicast lock. `ACTION_USER_PRESENT` is what lifts an `UNLOCK` park (plus a short re-evaluation, because that broadcast can land before the keyguard state settles).
 
 ## Key Directories
 

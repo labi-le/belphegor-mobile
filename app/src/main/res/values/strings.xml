@@ -127,6 +127,8 @@
     <!-- behavior (added) -->
     <string name="set_screen_pause">Pause with the screen off</string>
     <string name="set_screen_pause_sub">Stop syncing while the screen is off. Clipboard copied elsewhere meanwhile will not arrive.</string>
+    <string name="set_resume_on_unlock">Resume only after unlock</string>
+    <string name="set_resume_on_unlock_sub">A screen that lights up without being unlocked (a glance at the clock) will not start syncing. Clipboard copied elsewhere meanwhile is missed, and unlocking does not bring it back.</string>
     <string name="set_hide_notif">Hide the notification</string>
     <string name="set_hide_notif_sub">Syncing keeps running. Android 13 and newer still list the app in the Task Manager.</string>
 
@@ -143,4 +145,6 @@
     <string name="notif_waiting_wifi">Paused - waiting for Wi-Fi</string>
     <string name="status_screen_wait">Screen off</string>
     <string name="notif_paused_screen">Paused - screen off</string>
+    <string name="status_unlock_wait">Waiting for unlock</string>
+    <string name="notif_waiting_unlock">Paused - waiting for unlock</string>
 </resources>

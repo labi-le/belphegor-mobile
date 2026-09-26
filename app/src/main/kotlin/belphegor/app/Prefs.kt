@@ -92,6 +92,15 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_SCREEN_OFF_PAUSE, true)
         set(v) = sp.edit().putBoolean(KEY_SCREEN_OFF_PAUSE, v).apply()
 
+    /** A screen that only lights up (a glance at the clock) must not wake the
+     *  node, the multicast lock and the peer dials. Under the screen pause the
+     *  node stays parked while the keyguard is up with the screen on, and the
+     *  next re-evaluation also tears down a running node if the keyguard came
+     *  back on a device that keeps the display interactive. */
+    var resumeOnUnlock: Boolean
+        get() = sp.getBoolean(KEY_RESUME_ON_UNLOCK, true)
+        set(v) = sp.edit().putBoolean(KEY_RESUME_ON_UNLOCK, v).apply()
+
     /** Post the mandatory FGS notification on a channel the app itself blocks (IMPORTANCE_NONE): the system drops the post, the service stays foreground. */
     var hideNotification: Boolean
         get() = sp.getBoolean(KEY_HIDE_NOTIF, false)
@@ -149,6 +158,7 @@ class Prefs(context: Context) {
         const val KEY_RECEIVE = "receive_enabled"
         const val KEY_WIFI_ONLY = "wifi_only"
         const val KEY_SCREEN_OFF_PAUSE = "screen_off_pause"
+        const val KEY_RESUME_ON_UNLOCK = "resume_on_unlock"
         const val KEY_HIDE_NOTIF = "hide_notification"
         const val KEY_THEME = "theme"
     }

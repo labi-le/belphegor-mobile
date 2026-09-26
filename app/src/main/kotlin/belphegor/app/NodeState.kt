@@ -19,8 +19,10 @@ object NodeState {
     var pause: Pause? = null
 
     /** SCREEN: screen off under [Prefs.pauseOnScreenOff].
-     *  NETWORK: Wi-Fi-only is on and the device is on mobile data. */
-    enum class Pause { SCREEN, NETWORK }
+     *  NETWORK: Wi-Fi-only is on and the device is on mobile data.
+     *  UNLOCK: the screen is on but the device is still locked, under
+     *  [Prefs.resumeOnUnlock]. */
+    enum class Pause { SCREEN, NETWORK, UNLOCK }
 
     val running: Boolean get() = node != null || pause != null
 

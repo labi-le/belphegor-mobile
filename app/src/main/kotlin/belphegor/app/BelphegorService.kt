@@ -1,5 +1,6 @@
 package belphegor.app
 
+import android.app.KeyguardManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
@@ -45,6 +46,7 @@ class BelphegorService : Service() {
     private var watchdog: ScheduledExecutorService? = null
     private var connectivityCallback: ConnectivityManager.NetworkCallback? = null
     private val main = Handler(Looper.getMainLooper())
+    @Volatile private var unlockRecheck: Runnable? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -128,24 +130,43 @@ class BelphegorService : Service() {
     }
 
     /**
-     * ACTION_SCREEN_ON/OFF reach runtime-registered receivers only -- a manifest
-     * component never sees them -- so the service itself has to stay up to
-     * notice the wake-up, even while its node is paused. A parked service holds
-     * no node, and therefore no sockets, timers or locks.
+     * ACTION_SCREEN_ON/OFF/USER_PRESENT reach runtime-registered receivers only
+     * -- a manifest component never sees them -- so the service itself has to
+     * stay up to notice the wake-up and the unlock, even while its node is
+     * paused. A parked service holds no node, and therefore no sockets, timers
+     * or locks.
      */
     private fun registerScreenWatch() {
         if (screenReceiver != null) return
         val receiver = object : BroadcastReceiver() {
-            override fun onReceive(c: Context?, intent: Intent?) = evaluateRun()
+            override fun onReceive(c: Context?, intent: Intent?) {
+                evaluateRun()
+                if (intent?.action == Intent.ACTION_USER_PRESENT) scheduleUnlockRecheck()
+            }
         }
         screenReceiver = receiver
+        // RECEIVER_NOT_EXPORTED looks safer but silently drops USER_PRESENT on
+        // API 33 (verified on device), and all three actions are protected
+        // system broadcasts that no other app can send anyway.
         registerReceiver(
             receiver,
             IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_SCREEN_OFF)
+                // The unlock signal, and the only one a normal app can get:
+                // KeyguardManager's own listener needs a permission the
+                // platform keeps for itself.
+                addAction(Intent.ACTION_USER_PRESENT)
             },
         )
+    }
+
+    /** The unlock broadcast can land before the keyguard state settles, and a
+     *  park taken from that stale sample would never lift: nothing else
+     *  re-evaluates until the next screen or network event. */
+    private fun scheduleUnlockRecheck() {
+        unlockRecheck?.let(main::removeCallbacks)
+        unlockRecheck = Runnable { evaluateRun() }.also { main.postDelayed(it, UNLOCK_RECHECK_MS) }
     }
 
     /**
@@ -220,6 +241,7 @@ class BelphegorService : Service() {
         when (NodeState.pause) {
             NodeState.Pause.SCREEN -> R.string.notif_paused_screen
             NodeState.Pause.NETWORK -> R.string.notif_waiting_wifi
+            NodeState.Pause.UNLOCK -> R.string.notif_waiting_unlock
             null -> R.string.notif_text
         },
     )
@@ -262,10 +284,16 @@ class BelphegorService : Service() {
         cm.registerDefaultNetworkCallback(cb)
     }
 
+    /** A device with no lock screen never parks here. A swipe-only keyguard
+     *  counts as locked, which is exactly the glance-at-the-clock case. */
+    private fun isUnlocked(): Boolean =
+        getSystemService(KeyguardManager::class.java)?.let { !it.isKeyguardLocked } ?: true
+
     /**
-     * Runs or pauses the node per the screen and Wi-Fi-only policies. Called on
-     * start, on screen on/off and on every default-network change; a paused node
-     * keeps the FGS alive so sync resumes by itself once the reason clears.
+     * Runs or pauses the node per the screen, Wi-Fi-only and unlock policies.
+     * Called on start, on screen on/off, on user-present and on every
+     * default-network change; a paused node keeps the FGS alive so sync
+     * resumes by itself once the reason clears.
      */
     private fun evaluateRun() {
         val prefs = Prefs(this)
@@ -273,6 +301,8 @@ class BelphegorService : Service() {
             getSystemService(PowerManager::class.java)?.isInteractive == false
         when {
             asleep -> pauseNode(NodeState.Pause.SCREEN, "screen off")
+            prefs.pauseOnScreenOff && prefs.resumeOnUnlock && !isUnlocked() ->
+                pauseNode(NodeState.Pause.UNLOCK, "waiting for unlock")
             prefs.wifiOnly && !onAllowedNetwork() ->
                 pauseNode(NodeState.Pause.NETWORK, "Wi-Fi only, waiting for Wi-Fi")
             else -> {
@@ -337,6 +367,8 @@ class BelphegorService : Service() {
         connectivityCallback = null
         screenReceiver?.let { runCatching { unregisterReceiver(it) } }
         screenReceiver = null
+        unlockRecheck?.let(main::removeCallbacks)
+        unlockRecheck = null
         multicastLock = null
         dialer.shutdownNow()
         super.onDestroy()
@@ -347,11 +379,13 @@ class BelphegorService : Service() {
     companion object {
         const val ACTION_CONNECT = "belphegor.app.action.CONNECT"
         const val ACTION_NOTIFICATION = "belphegor.app.action.NOTIFICATION"
+        const val ACTION_REEVALUATE = "belphegor.app.action.REEVALUATE"
         const val EXTRA_ADDR = "belphegor.app.extra.ADDR"
         private const val TAG = "BelphegorService"
         private const val CHANNEL = "clipboard-sync"
         private const val CHANNEL_HIDDEN = "clipboard-sync-hidden"
         private const val NOTIFICATION_ID = 1
         private const val WATCHDOG_MS = 15_000L
+        private const val UNLOCK_RECHECK_MS = 1_000L
     }
 }
