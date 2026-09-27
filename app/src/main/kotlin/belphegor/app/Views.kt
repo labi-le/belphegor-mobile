@@ -321,7 +321,7 @@ fun LinearLayout.switchRow(title: String, subtitle: String?, checked: Boolean): 
         setPaddingRelative(context.dp(16), context.dp(8), context.dp(16), context.dp(8))
         addView(texts, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         addView(sw)
-        setOnClickListener { sw.toggle() }
+        setOnClickListener { if (sw.isEnabled) sw.toggle() }
     }
     addView(row)
     return sw
