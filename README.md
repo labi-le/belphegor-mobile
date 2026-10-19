@@ -55,11 +55,15 @@ Android 10+ blocks apps from reading or writing the clipboard while they are
 **not** in the foreground. Without a workaround, belphegor-mobile only syncs
 while its window is open.
 
-The optional **Belphegor Background Clipboard** LSPosed module lifts that
-restriction **for belphegor only**: it hooks the framework clipboard guard
-(`ClipboardService.clipboardAccessAllowed`) inside `system_server` and
-force-allows calls made on the app's behalf, so sync keeps working in the
-background. It targets belphegor's package and nothing else.
+The optional **Belphegor Background Clipboard** LSPosed module lifts the
+background restriction **for belphegor only**: it hooks the framework clipboard
+guard (`ClipboardService.clipboardAccessAllowed`) inside `system_server`.
+On Android 16's AOSP clipboard service, it also suppresses the
+“Belphegor pasted from your clipboard” read toast **only** for reads attributed
+to `belphegor.app` after checking that the read UID owns that package. Other
+apps' clipboard read notices are unchanged. The toast hook requires the
+supported AOSP method signature; if a ROM changes it, notices remain enabled.
+Clipboard copy previews are not affected.
 
 **Requirements:** a rooted device (Magisk / KernelSU) with LSPosed (Zygisk),
 Android 10+.

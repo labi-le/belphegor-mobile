@@ -4,8 +4,7 @@ plugins {
 }
 
 // LSPosed module (a normal APK that LSPosed activates). It only makes sense on
-// a rooted device running Magisk + LSPosed (Zygisk). It grants the belphegor
-// app background clipboard access by hooking the framework guard.
+// a rooted device running Magisk + LSPosed (Zygisk).
 android {
     namespace = "belphegor.background"
     compileSdk = 35
@@ -15,8 +14,8 @@ android {
         applicationId = "belphegor.background"
         minSdk = 29 // the background-clipboard restriction starts at Android 10
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     buildTypes {

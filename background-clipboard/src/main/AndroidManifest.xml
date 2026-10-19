@@ -13,7 +13,7 @@
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="Grants the Belphegor app background clipboard access on Android 10+." />
+            android:value="Grants Belphegor background clipboard access and suppresses its read notices on supported Android versions." />
         <meta-data
             android:name="xposedminversion"
             android:value="82" />
