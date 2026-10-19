@@ -16,8 +16,8 @@ android {
         applicationId = "belphegor.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.2.0"
+        versionCode = 8
+        versionName = "0.2.1"
         // gomobile ships one .so per ABI. Default (release) builds are ARM-only
         // for real phones; x86_64 (emulator/Waydroid) comes from the debug build
         // or from a release built with -Px86only (a Waydroid-installable APK).
